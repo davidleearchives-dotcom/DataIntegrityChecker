@@ -13,6 +13,16 @@
             color: white;
         }
     </style>
+    <script>
+        // Global Auth & Axios Setup (Must run before content scripts)
+        const token = localStorage.getItem('token');
+        if (!token && window.location.pathname !== '/') {
+            window.location.href = '/';
+        }
+        if (token) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        }
+    </script>
 </head>
 <body class="bg-gray-50 h-screen flex overflow-hidden">
 
@@ -65,16 +75,7 @@
     </main>
 
     <script>
-        // Auth Check
-        const token = localStorage.getItem('token');
-        if (!token && window.location.pathname !== '/') {
-            window.location.href = '/';
-        }
-
-        // Setup Axios Interceptor
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-        // Load User Info
+        // Load User Info & UI Helpers
         if (token) {
             axios.get('/users/me').then(res => {
                 const user = res.data;
@@ -82,6 +83,7 @@
                 document.getElementById('user-dept').innerText = user.department || 'Staff';
                 document.getElementById('user-avatar').innerText = (user.full_name || user.username)[0].toUpperCase();
             }).catch(() => {
+                // If token invalid, logout
                 logout();
             });
         }

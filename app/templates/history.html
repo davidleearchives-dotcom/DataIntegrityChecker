@@ -60,7 +60,7 @@
                     <td class="px-6 py-4 text-center text-yellow-600 font-semibold">${item.mismatched_count}</td>
                     <td class="px-6 py-4 text-center text-red-600 font-semibold">${item.missing_source_count + item.missing_target_count}</td>
                     <td class="px-6 py-4 text-center">
-                        <a href="/download/${resultFile}" class="text-blue-600 hover:text-blue-900 hover:underline">
+                        <a href="#" onclick="downloadHistory('${resultFile}'); return false;" class="text-blue-600 hover:text-blue-900 hover:underline">
                             <i class="fas fa-download mr-1"></i> Report
                         </a>
                     </td>
@@ -70,6 +70,11 @@
         } catch (error) {
             console.error("Failed to load history", error);
         }
+    }
+
+    function downloadHistory(filename) {
+        const token = localStorage.getItem('token');
+        window.location.href = `/download/${filename}?token=${token}`;
     }
 
     loadHistory();

@@ -21,30 +21,38 @@
     <!-- Upload Section -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="uploadSection">
         <!-- Source Upload -->
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group">
-            <div class="text-center">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group cursor-pointer relative" id="sourceDropZone">
+            <div class="text-center pointer-events-none">
                 <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                     <i class="fas fa-database text-xl"></i>
                 </div>
                 <h3 class="font-semibold text-gray-800">Source: BMS API Data</h3>
-                <p class="text-xs text-gray-500 mb-4">Excel file (.xlsx)</p>
-                <input type="file" id="sourceFile" accept=".xlsx" class="hidden" onchange="handleFileSelect('sourceFile', 'sourceInfo')">
-                <button onclick="document.getElementById('sourceFile').click()" class="text-sm text-blue-600 font-medium hover:underline">Browse File</button>
+                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx) or CSV (.csv)</p>
+                <input type="file" id="sourceFile" accept=".xlsx,.csv" class="hidden" onchange="handleFileSelect('sourceFile', 'sourceInfo')">
+                <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
                 <p id="sourceInfo" class="mt-2 text-sm text-green-600 font-medium hidden"></p>
+            </div>
+            <!-- Drag Overlay -->
+            <div class="absolute inset-0 bg-blue-50 bg-opacity-90 flex items-center justify-center rounded-xl hidden" id="sourceOverlay">
+                <p class="text-blue-600 font-bold">Drop Source File Here</p>
             </div>
         </div>
 
         <!-- Target Upload -->
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group">
-            <div class="text-center">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group cursor-pointer relative" id="targetDropZone">
+            <div class="text-center pointer-events-none">
                 <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                     <i class="fas fa-file-medical text-xl"></i>
                 </div>
                 <h3 class="font-semibold text-gray-800">Target: Red Cross Data</h3>
-                <p class="text-xs text-gray-500 mb-4">Excel file (.xlsx)</p>
-                <input type="file" id="targetFile" accept=".xlsx" class="hidden" onchange="handleFileSelect('targetFile', 'targetInfo')">
-                <button onclick="document.getElementById('targetFile').click()" class="text-sm text-blue-600 font-medium hover:underline">Browse File</button>
+                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx) or CSV (.csv)</p>
+                <input type="file" id="targetFile" accept=".xlsx,.csv" class="hidden" onchange="handleFileSelect('targetFile', 'targetInfo')">
+                <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
                 <p id="targetInfo" class="mt-2 text-sm text-green-600 font-medium hidden"></p>
+            </div>
+             <!-- Drag Overlay -->
+             <div class="absolute inset-0 bg-red-50 bg-opacity-90 flex items-center justify-center rounded-xl hidden" id="targetOverlay">
+                <p class="text-red-600 font-bold">Drop Target File Here</p>
             </div>
         </div>
     </div>
@@ -171,9 +179,18 @@
             return;
         }
 
-        // Headers
-        const headers = Object.keys(data[0]);
+        // Headers (Get from first item, excluding internal keys)
+        // Internal keys: type, key, status
+        const internalKeys = ['type', 'key', 'status'];
+        const headers = Object.keys(data[0]).filter(k => !internalKeys.includes(k));
+        
+        // Add "Source/Target" Column Header
         const trHead = document.createElement('tr');
+        const thType = document.createElement('th');
+        thType.className = "px-6 py-3 bg-gray-200 w-24";
+        thType.innerText = "Type";
+        trHead.appendChild(thType);
+        
         headers.forEach(h => {
             const th = document.createElement('th');
             th.className = "px-6 py-3";
@@ -183,27 +200,55 @@
         thead.appendChild(trHead);
 
         // Rows
-        data.forEach(row => {
-            // Filter: Show only Mismatch or Missing for preview clarity?
-            // PRD says "불일치 항목만 필터링해서 보여주는 기능".
-            // My backend returned top 100 rows. I should filter client side or backend side.
-            // Let's assume backend returned mixed but we highlight discrepancies.
-            // Wait, backend logic was: `result_df.head(100)`. This is just top 100.
-            // If matches are top, user sees matches.
-            // Ideally, backend should return `result_df[result_df['Verification_Result'] != 'Match'].head(100)`
-            // I should update backend later. For now, let's just render.
-            
+        data.forEach((row, index) => {
             const tr = document.createElement('tr');
-            tr.className = "bg-white border-b hover:bg-gray-50";
+            const isSource = row.type === 'Source';
             
-            const result = row['Verification_Result'];
-            if (result && result.startsWith('Mismatch')) tr.className = "bg-red-50 border-b";
-            if (result && result.startsWith('Missing')) tr.className = "bg-red-100 border-b";
+            // Style: Source (Top) = White/Blueish, Target (Bottom) = Grayish
+            // Group them visually: Add border bottom only after Target row
+            if (isSource) {
+                tr.className = "bg-blue-50"; // Light Blue for Source
+            } else {
+                tr.className = "bg-gray-50 border-b-2 border-gray-300"; // Gray for Target + Divider
+            }
 
+            // Type Cell
+            const tdType = document.createElement('td');
+            tdType.className = "px-6 py-4 font-bold text-xs uppercase " + (isSource ? "text-blue-700" : "text-gray-600");
+            tdType.innerText = row.type;
+            tr.appendChild(tdType);
+
+            // Data Cells
             headers.forEach(h => {
                 const td = document.createElement('td');
-                td.className = "px-6 py-4 font-medium text-gray-900 whitespace-nowrap";
-                td.innerText = row[h] !== null ? row[h] : '';
+                td.className = "px-6 py-4 text-gray-900 whitespace-nowrap";
+                
+                // Highlight Logic: Compare with sibling row if possible, or just render
+                // But simplified logic: comparison.py doesn't flag diff per cell in preview data yet.
+                // However, we can infer diff if Source vs Target values are different?
+                // Since we iterate linearly Source -> Target, we can check.
+                
+                // For now, simple render. 
+                // Advanced: If we want to highlight specific cell diffs, we need to know paired value.
+                // Since data is [Src, Tgt, Src, Tgt...], 
+                // If isSource, we look ahead. If !isSource, we look behind.
+                
+                let val = row[h] !== null ? row[h] : '';
+                let isDiff = false;
+                
+                if (data.length > index + 1 && isSource) {
+                    const nextRow = data[index+1];
+                    if (nextRow[h] != val) isDiff = true;
+                } else if (index > 0 && !isSource) {
+                    const prevRow = data[index-1];
+                    if (prevRow[h] != val) isDiff = true;
+                }
+                
+                if (isDiff) {
+                    td.classList.add("bg-yellow-100", "font-semibold", "text-red-600");
+                }
+                
+                td.innerText = val;
                 tr.appendChild(td);
             });
             tbody.appendChild(tr);
@@ -212,12 +257,59 @@
 
     function downloadResult() {
         if (currentResultFile) {
-            window.location.href = `/download/${currentResultFile}`;
+            // Append token to URL for authentication
+            const token = localStorage.getItem('token');
+            window.location.href = `/download/${currentResultFile}?token=${token}`;
         }
     }
 
     function resetDashboard() {
         location.reload();
     }
+
+    // Drag and Drop Logic
+    function setupDragAndDrop(dropZoneId, overlayId, inputId, infoId) {
+        const dropZone = document.getElementById(dropZoneId);
+        const overlay = document.getElementById(overlayId);
+        const input = document.getElementById(inputId);
+        const info = document.getElementById(infoId);
+
+        // Click to open file dialog
+        dropZone.addEventListener('click', () => input.click());
+
+        // Drag Events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                overlay.classList.remove('hidden');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                overlay.classList.add('hidden');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                input.files = files;
+                handleFileSelect(inputId, infoId);
+            }
+        });
+    }
+
+    setupDragAndDrop('sourceDropZone', 'sourceOverlay', 'sourceFile', 'sourceInfo');
+    setupDragAndDrop('targetDropZone', 'targetOverlay', 'targetFile', 'targetInfo');
 </script>
 {% endblock %}

@@ -5,6 +5,7 @@ from typing import List
 import shutil
 import os
 import json
+import pandas as pd
 from datetime import datetime
 from .. import database, schemas, models, auth, crud
 from ..services import comparison, excel_handler
@@ -35,10 +36,13 @@ async def compare_files(
             
         # Get User Settings for Mapping
         settings = crud.get_settings(db, current_user.id)
-        mapping_rules = settings.column_mapping if settings else '{"source_cols": ["A", "B"], "target_cols": ["A", "B"]}'
+        # Use default from models if settings not found (though crud.get_settings shouldn't return None if accessed via settings page logic, but for safety)
+        # We should use the same default as models.py
+        default_mapping = '{"source_cols": ["A", "B", "C", "D", "E"], "target_cols": ["A", "B", "C", "D", "E"]}'
+        mapping_rules = settings.column_mapping if settings else default_mapping
         
         # Run Comparison
-        summary, result_df = comparison.compare_excel_files(source_path, target_path, mapping_rules)
+        summary, result_df, preview_list = comparison.compare_excel_files(source_path, target_path, mapping_rules)
         
         # Generate Result Excel
         result_filename = f"Result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -58,15 +62,9 @@ async def compare_files(
         )
         crud.create_history(db, history_data, current_user.id)
         
-        # Return Summary and Preview Data (limit 100 rows for preview)
-        # Filter for non-matches first
-        mismatches_df = result_df[result_df['Verification_Result'] != 'Match']
-        if len(mismatches_df) > 0:
-            preview_df = mismatches_df.head(100)
-        else:
-            preview_df = result_df.head(100)
-            
-        preview_data = preview_df.fillna("").to_dict(orient="records")
+        # Return Summary and Preview Data (limit 200 rows -> 100 discrepancies * 2 rows each)
+        # preview_list is already filtered for mismatches in comparison.py
+        preview_data = preview_list[:200]
         
         return {
             "summary": summary,
@@ -78,7 +76,34 @@ async def compare_files(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/download/{filename}")
-async def download_result(filename: str, current_user: models.User = Depends(auth.get_current_active_user)):
+async def download_result(
+    filename: str, 
+    token: str = None, # Allow token in query param
+    db: Session = Depends(database.get_db)
+):
+    # Manually validate token if provided in query param (for browser downloads)
+    if token:
+        try:
+            # Re-use logic from auth.get_current_user but adapted
+            # Or simply call auth.get_current_user with the token string?
+            # auth.get_current_user expects "Depends(oauth2_scheme)" which extracts from Header.
+            # We need a manual check here.
+            from jose import jwt, JWTError
+            from .. import schemas
+            
+            payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+            username: str = payload.get("sub")
+            if username is None:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            # We don't necessarily need full user object for download, just valid auth.
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    else:
+        # If no token param, try standard Dependency (works for API calls, fails for browser direct link without header)
+        # But browser link won't send header. So we MUST rely on token param for this route.
+        # Unless we make it public? No, security first.
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     file_path = os.path.join(RESULTS_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
