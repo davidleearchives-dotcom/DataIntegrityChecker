@@ -61,52 +61,96 @@
     </div>
 </div>
 
-<!-- Add User Modal -->
-<div id="addUserModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-    <div class="bg-white p-6 rounded-xl shadow-lg w-96">
-        <h3 class="text-lg font-bold mb-4">Add New User</h3>
-        <form id="addUserForm" class="space-y-4">
-            <input type="text" id="newUsername" placeholder="Username (4+ chars)" class="w-full border p-2 rounded" required>
-            <input type="password" id="newPassword" placeholder="Password (8+ chars)" class="w-full border p-2 rounded" required>
-            <input type="text" id="newFullName" placeholder="Full Name" class="w-full border p-2 rounded" required>
-            <input type="text" id="newDept" placeholder="Department" class="w-full border p-2 rounded">
-            <select id="newRole" class="w-full border p-2 rounded">
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-            </select>
-            <div class="flex justify-end gap-2 mt-4">
-                <button type="button" onclick="closeAddUserModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
-            </div>
-        </form>
+    <!-- Add User Modal -->
+    <div id="addUserModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl shadow-lg w-96">
+            <h3 class="text-lg font-bold mb-4">Add New User</h3>
+            <form id="addUserForm" class="space-y-4">
+                <input type="text" id="newUsername" placeholder="Username (4+ chars)" class="w-full border p-2 rounded" required>
+                <input type="password" id="newPassword" placeholder="Password (8+ chars)" class="w-full border p-2 rounded" required>
+                <input type="text" id="newFullName" placeholder="Full Name" class="w-full border p-2 rounded" required>
+                <input type="text" id="newDept" placeholder="Department" class="w-full border p-2 rounded">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Role</label>
+                    <select id="newRole" class="w-full border p-2 rounded">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button type="button" onclick="closeAddUserModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+                </div>
+            </form>
+        </div>
     </div>
-</div>
 
-<script>
-    async function loadSettings() {
-        try {
-            // Load Mapping
-            const settingsRes = await axios.get('/settings');
-            const mapping = JSON.parse(settingsRes.data.column_mapping);
-            document.getElementById('sourceCols').value = mapping.source_cols.join(', ');
-            document.getElementById('targetCols').value = mapping.target_cols.join(', ');
-            
-            // Disable inputs by default on load
-            document.getElementById('sourceCols').disabled = true;
-            document.getElementById('targetCols').disabled = true;
-            document.getElementById('saveBtn').disabled = true;
-            document.getElementById('modifyBtn').disabled = false;
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl shadow-lg w-96">
+            <h3 class="text-lg font-bold mb-4">Edit User</h3>
+            <form id="editUserForm" class="space-y-4">
+                <input type="hidden" id="editUserId">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Username</label>
+                    <input type="text" id="editUsername" class="w-full border p-2 rounded bg-gray-100" readonly>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Password (Leave blank to keep current)</label>
+                    <input type="password" id="editPassword" placeholder="New Password" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Full Name</label>
+                    <input type="text" id="editFullName" placeholder="Full Name" class="w-full border p-2 rounded" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Department</label>
+                    <input type="text" id="editDept" placeholder="Department" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Role</label>
+                    <select id="editRole" class="w-full border p-2 rounded">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button type="button" onclick="closeEditUserModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-            // Load Users (if Admin)
-            const userRes = await axios.get('/users/me');
-            if (userRes.data.role === 'admin') {
-                document.getElementById('userManagementSection').classList.remove('hidden');
-                loadUsers();
+    <script>
+        let currentUser = null;
+        let allUsers = [];
+
+        async function loadSettings() {
+            try {
+                // Load Mapping
+                const settingsRes = await axios.get('/settings');
+                const mapping = JSON.parse(settingsRes.data.column_mapping);
+                document.getElementById('sourceCols').value = mapping.source_cols.join(', ');
+                document.getElementById('targetCols').value = mapping.target_cols.join(', ');
+                
+                // Disable inputs by default on load
+                document.getElementById('sourceCols').disabled = true;
+                document.getElementById('targetCols').disabled = true;
+                document.getElementById('saveBtn').disabled = true;
+                document.getElementById('modifyBtn').disabled = false;
+
+                // Load Users (if Admin)
+                const userRes = await axios.get('/users/me');
+                currentUser = userRes.data;
+                if (currentUser.role === 'admin') {
+                    document.getElementById('userManagementSection').classList.remove('hidden');
+                    loadUsers();
+                }
+            } catch (error) {
+                console.error("Error loading settings", error);
             }
-        } catch (error) {
-            console.error("Error loading settings", error);
         }
-    }
 
     function enableModification() {
         document.getElementById('sourceCols').disabled = false;
@@ -148,9 +192,20 @@
     async function loadUsers() {
         try {
             const res = await axios.get('/users');
+            allUsers = res.data;
             const tbody = document.getElementById('usersBody');
             tbody.innerHTML = '';
             res.data.forEach(user => {
+                // Permission Check
+                let canEdit = false;
+                if (currentUser) {
+                    if (currentUser.username === user.username) {
+                        canEdit = true;
+                    } else if (currentUser.role === 'admin' && user.role !== 'admin') {
+                        canEdit = true;
+                    }
+                }
+
                 const tr = document.createElement('tr');
                 tr.className = "border-b";
                 tr.innerHTML = `
@@ -163,13 +218,76 @@
                         </span>
                     </td>
                     <td class="px-4 py-2">
-                        <button class="text-blue-600 hover:underline text-xs">Edit</button>
+                        <button onclick="openEditUserModal(${user.id})" 
+                                class="text-xs ${canEdit ? 'text-blue-600 hover:underline' : 'text-gray-400 cursor-not-allowed'}" 
+                                ${canEdit ? '' : 'disabled'}>
+                            Edit
+                        </button>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
-        } catch (error) {}
+        } catch (error) {
+            console.error("Error loading users", error);
+        }
     }
+
+    function openEditUserModal(userId) {
+        const user = allUsers.find(u => u.id === userId);
+        if (!user) return;
+        
+        document.getElementById('editUserId').value = user.id;
+        document.getElementById('editUsername').value = user.username;
+        document.getElementById('editFullName').value = user.full_name || '';
+        document.getElementById('editDept').value = user.department || '';
+        document.getElementById('editPassword').value = ''; 
+        document.getElementById('editRole').value = user.role;
+        
+        // Handle Role Select Availability
+        const roleSelect = document.getElementById('editRole');
+        if (currentUser.role === 'admin' && currentUser.id !== user.id) {
+            roleSelect.disabled = false;
+            roleSelect.classList.remove('bg-gray-100');
+        } else {
+            // Cannot edit own role or normal user editing self
+            roleSelect.disabled = true;
+            roleSelect.classList.add('bg-gray-100');
+        }
+        
+        document.getElementById('editUserModal').classList.remove('hidden');
+    }
+
+    function closeEditUserModal() {
+        document.getElementById('editUserModal').classList.add('hidden');
+    }
+
+    document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const userId = document.getElementById('editUserId').value;
+        const updates = {
+            full_name: document.getElementById('editFullName').value,
+            department: document.getElementById('editDept').value
+        };
+        const pwd = document.getElementById('editPassword').value;
+        if (pwd) {
+            updates.password = pwd;
+        }
+        
+        // Include Role if enabled (meaning Admin is editing someone else)
+        const roleSelect = document.getElementById('editRole');
+        if (!roleSelect.disabled) {
+            updates.role = roleSelect.value;
+        }
+
+        try {
+            await axios.put(`/users/${userId}`, updates);
+            closeEditUserModal();
+            loadUsers();
+            alert("User updated!");
+        } catch (error) {
+            alert("Failed to update user: " + (error.response?.data?.detail || error.message));
+        }
+    });
 
     function openAddUserModal() {
         document.getElementById('addUserModal').classList.remove('hidden');

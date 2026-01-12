@@ -22,7 +22,31 @@ async def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(data
 
 @router.put("/users/{user_id}", response_model=schemas.User)
 async def update_user_info(user_id: int, user_update: schemas.UserUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_user)):
-    # Users can update their own info, Admins can update anyone
-    if current_user.role != "admin" and current_user.id != user_id:
+    # Check if target user exists
+    target_user = crud.get_user(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Permission Logic
+    is_self = current_user.id == user_id
+    is_admin = current_user.role == "admin"
+    
+    # 1. Normal user cannot edit others
+    if not is_self and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # 2. Admin cannot edit other admins
+    if is_admin and not is_self:
+        if target_user.role == "admin":
+            raise HTTPException(status_code=403, detail="Cannot edit other admin accounts")
+
+    # 3. Role Update Logic
+    if user_update.role:
+        # Only Admin can change roles
+        if not is_admin:
+             raise HTTPException(status_code=403, detail="Only admins can change roles")
+        # Cannot change own role (prevent self-lockout)
+        if is_self:
+             raise HTTPException(status_code=400, detail="Cannot change your own role")
+             
     return crud.update_user(db, user_id, user_update)

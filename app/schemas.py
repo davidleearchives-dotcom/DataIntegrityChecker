@@ -17,6 +17,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     department: Optional[str] = None
     contact: Optional[str] = None
+    role: Optional[str] = None
 
 class User(UserBase):
     id: int

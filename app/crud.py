@@ -39,6 +39,8 @@ def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate):
         db_user.department = user_update.department
     if user_update.contact:
         db_user.contact = user_update.contact
+    if user_update.role:
+        db_user.role = user_update.role
     db.commit()
     db.refresh(db_user)
     return db_user
