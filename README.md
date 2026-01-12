@@ -1,4 +1,4 @@
-# BMS Data Verification Tool (혈액수급관리시스템 데이터 검증 도구)
+# 엑셀셀 Data Verification Tool (혈액수급관리시스템 데이터 검증 도구)
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.68%2B-green)
@@ -7,7 +7,7 @@
 
 ## 📖 개요 (Overview)
 
-**BMS Data Verification Tool**은 혈액수급관리시스템(BMS)의 데이터와 적십자사(Red Cross)의 데이터를 비교하여 정합성을 검증하는 기업용(Enterprise) 웹 애플리케이션입니다.
+**엑셀셀 Data Verification Tool**은 엑셀 원본 데이터와 엑셀 대조본 데이터를 비교하여 정합성을 검증하는 기업용(Enterprise) 웹 애플리케이션입니다.
 
 두 개의 엑셀 파일을 업로드하여 자동으로 비교 분석하고, 불일치 내역을 시각적으로 제공하며, 결과 보고서를 엑셀 파일로 생성해줍니다.
 
