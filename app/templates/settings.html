@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-8">
+    
+    <!-- Mapping Rules -->
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <i class="fas fa-columns text-blue-600"></i> Column Mapping Rules
+        </h3>
+        <p class="text-sm text-gray-500 mb-6">Define which columns to compare between the Source and Target files. Order matters.</p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Source Columns (Comma separated)</label>
+                <input type="text" id="sourceCols" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. A, B, C, D, E">
+                <p class="text-xs text-gray-400 mt-1">First column is used as the Unique Key.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Target Columns (Comma separated)</label>
+                <input type="text" id="targetCols" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. A, B, C, D, E">
+            </div>
+        </div>
+        <div class="mt-6 text-right">
+            <button onclick="saveMapping()" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                Save Rules
+            </button>
+        </div>
+    </div>
+
+    <!-- User Management (Admin Only) -->
+    <div id="userManagementSection" class="bg-white p-6 rounded-xl shadow-sm hidden">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fas fa-users text-blue-600"></i> User Management
+            </h3>
+            <button onclick="openAddUserModal()" class="px-4 py-2 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors">
+                <i class="fas fa-plus mr-1"></i> Add User
+            </button>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2">Username</th>
+                        <th class="px-4 py-2">Full Name</th>
+                        <th class="px-4 py-2">Dept</th>
+                        <th class="px-4 py-2">Role</th>
+                        <th class="px-4 py-2">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody">
+                    <!-- Dynamic -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div id="addUserModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-xl shadow-lg w-96">
+        <h3 class="text-lg font-bold mb-4">Add New User</h3>
+        <form id="addUserForm" class="space-y-4">
+            <input type="text" id="newUsername" placeholder="Username (4+ chars)" class="w-full border p-2 rounded" required>
+            <input type="password" id="newPassword" placeholder="Password (8+ chars)" class="w-full border p-2 rounded" required>
+            <input type="text" id="newFullName" placeholder="Full Name" class="w-full border p-2 rounded" required>
+            <input type="text" id="newDept" placeholder="Department" class="w-full border p-2 rounded">
+            <select id="newRole" class="w-full border p-2 rounded">
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+            </select>
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="closeAddUserModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    async function loadSettings() {
+        try {
+            // Load Mapping
+            const settingsRes = await axios.get('/settings');
+            const mapping = JSON.parse(settingsRes.data.column_mapping);
+            document.getElementById('sourceCols').value = mapping.source_cols.join(', ');
+            document.getElementById('targetCols').value = mapping.target_cols.join(', ');
+
+            // Load Users (if Admin)
+            const userRes = await axios.get('/users/me');
+            if (userRes.data.role === 'admin') {
+                document.getElementById('userManagementSection').classList.remove('hidden');
+                loadUsers();
+            }
+        } catch (error) {
+            console.error("Error loading settings", error);
+        }
+    }
+
+    async function saveMapping() {
+        const sourceCols = document.getElementById('sourceCols').value.split(',').map(s => s.trim()).filter(s => s);
+        const targetCols = document.getElementById('targetCols').value.split(',').map(s => s.trim()).filter(s => s);
+
+        if (sourceCols.length !== targetCols.length) {
+            alert("Number of source and target columns must match!");
+            return;
+        }
+
+        const mapping = {
+            source_cols: sourceCols,
+            target_cols: targetCols
+        };
+
+        try {
+            await axios.put('/settings', {
+                column_mapping: JSON.stringify(mapping)
+            });
+            alert("Mapping rules saved!");
+        } catch (error) {
+            alert("Failed to save settings");
+        }
+    }
+
+    async function loadUsers() {
+        try {
+            const res = await axios.get('/users');
+            const tbody = document.getElementById('usersBody');
+            tbody.innerHTML = '';
+            res.data.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b";
+                tr.innerHTML = `
+                    <td class="px-4 py-2 font-medium">${user.username}</td>
+                    <td class="px-4 py-2">${user.full_name || '-'}</td>
+                    <td class="px-4 py-2">${user.department || '-'}</td>
+                    <td class="px-4 py-2">
+                        <span class="px-2 py-1 rounded text-xs ${user.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-600'}">
+                            ${user.role}
+                        </span>
+                    </td>
+                    <td class="px-4 py-2">
+                        <button class="text-blue-600 hover:underline text-xs">Edit</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (error) {}
+    }
+
+    function openAddUserModal() {
+        document.getElementById('addUserModal').classList.remove('hidden');
+    }
+
+    function closeAddUserModal() {
+        document.getElementById('addUserModal').classList.add('hidden');
+    }
+
+    document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const user = {
+            username: document.getElementById('newUsername').value,
+            password: document.getElementById('newPassword').value,
+            full_name: document.getElementById('newFullName').value,
+            department: document.getElementById('newDept').value,
+            role: document.getElementById('newRole').value
+        };
+
+        try {
+            await axios.post('/users/', user);
+            closeAddUserModal();
+            loadUsers();
+            alert("User created!");
+        } catch (error) {
+            alert("Failed to create user: " + (error.response?.data?.detail || error.message));
+        }
+    });
+
+    loadSettings();
+</script>
+{% endblock %}

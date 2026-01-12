@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS Verification Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <style>
+        .sidebar-active {
+            background-color: #2563eb;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-white shadow-md flex flex-col z-10">
+        <div class="p-6 border-b">
+            <h1 class="text-2xl font-bold text-blue-800 flex items-center gap-2">
+                <i class="fas fa-heartbeat"></i> BMS Tool
+            </h1>
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="/dashboard" id="nav-dashboard" class="flex items-center gap-3 px-4 py-3 text-gray-600 rounded-lg hover:bg-blue-50 transition-colors">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a href="/history_page" id="nav-history" class="flex items-center gap-3 px-4 py-3 text-gray-600 rounded-lg hover:bg-blue-50 transition-colors">
+                <i class="fas fa-history"></i> History
+            </a>
+            <a href="/settings_page" id="nav-settings" class="flex items-center gap-3 px-4 py-3 text-gray-600 rounded-lg hover:bg-blue-50 transition-colors">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </nav>
+
+        <div class="p-4 border-t bg-gray-50">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold" id="user-avatar">
+                    U
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-gray-800" id="user-name">User</p>
+                    <p class="text-xs text-gray-500" id="user-dept">Department</p>
+                </div>
+            </div>
+            <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <header class="bg-white shadow-sm p-4 flex justify-between items-center lg:hidden">
+            <h1 class="text-xl font-bold text-gray-800">BMS Verification</h1>
+            <button class="text-gray-600"><i class="fas fa-bars"></i></button>
+        </header>
+        
+        <div class="flex-1 overflow-auto p-8" id="main-content">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <script>
+        // Auth Check
+        const token = localStorage.getItem('token');
+        if (!token && window.location.pathname !== '/') {
+            window.location.href = '/';
+        }
+
+        // Setup Axios Interceptor
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+        // Load User Info
+        if (token) {
+            axios.get('/users/me').then(res => {
+                const user = res.data;
+                document.getElementById('user-name').innerText = user.full_name || user.username;
+                document.getElementById('user-dept').innerText = user.department || 'Staff';
+                document.getElementById('user-avatar').innerText = (user.full_name || user.username)[0].toUpperCase();
+            }).catch(() => {
+                logout();
+            });
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+
+        // Highlight Active Menu
+        const path = window.location.pathname;
+        if (path.includes('dashboard')) document.getElementById('nav-dashboard').classList.add('sidebar-active', 'bg-blue-600', 'text-white');
+        else if (path.includes('history')) document.getElementById('nav-history').classList.add('sidebar-active', 'bg-blue-600', 'text-white');
+        else if (path.includes('settings')) document.getElementById('nav-settings').classList.add('sidebar-active', 'bg-blue-600', 'text-white');
+    </script>
+</body>
+</html>

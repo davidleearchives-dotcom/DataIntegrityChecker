@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">Verification History</h2>
+            <p class="text-gray-500 text-sm">Track past verifications and download reports</p>
+        </div>
+        <div class="relative">
+            <input type="text" placeholder="Search by filename..." class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+            <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                    <tr>
+                        <th class="px-6 py-3">Date</th>
+                        <th class="px-6 py-3">Source File</th>
+                        <th class="px-6 py-3">Target File</th>
+                        <th class="px-6 py-3 text-center">Total</th>
+                        <th class="px-6 py-3 text-center">Matched</th>
+                        <th class="px-6 py-3 text-center">Mismatch</th>
+                        <th class="px-6 py-3 text-center">Missing</th>
+                        <th class="px-6 py-3 text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <!-- Dynamic Content -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadHistory() {
+        try {
+            const response = await axios.get('/history');
+            const data = response.data;
+            const tbody = document.getElementById('historyBody');
+            tbody.innerHTML = '';
+
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = "bg-white border-b hover:bg-gray-50";
+                
+                const date = new Date(item.timestamp).toLocaleString();
+                const resultFile = item.result_file_path.split('\\').pop().split('/').pop(); // Extract filename
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4">${date}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900">${item.source_filename}</td>
+                    <td class="px-6 py-4">${item.target_filename}</td>
+                    <td class="px-6 py-4 text-center">${item.total_rows}</td>
+                    <td class="px-6 py-4 text-center text-green-600 font-semibold">${item.matched_count}</td>
+                    <td class="px-6 py-4 text-center text-yellow-600 font-semibold">${item.mismatched_count}</td>
+                    <td class="px-6 py-4 text-center text-red-600 font-semibold">${item.missing_source_count + item.missing_target_count}</td>
+                    <td class="px-6 py-4 text-center">
+                        <a href="/download/${resultFile}" class="text-blue-600 hover:text-blue-900 hover:underline">
+                            <i class="fas fa-download mr-1"></i> Report
+                        </a>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error("Failed to load history", error);
+        }
+    }
+
+    loadHistory();
+</script>
+{% endblock %}
