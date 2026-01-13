@@ -105,6 +105,14 @@ DataIntegrityChecker/
 
 ## � 업데이트 로그 (Update Log)
 
+### 2026-01-14
+- **시스템 안정성 강화:**
+  - `main.py`의 정적 파일(Static) 및 템플릿(Templates) 경로 설정을 절대 경로(`os.path.abspath`)로 변경하여 실행 환경에 따른 경로 오류 해결.
+- **UI/UX 개선 및 브랜딩 업데이트:**
+  - 서비스명을 **DataVerify**로 통일 및 DB 아이콘(<i class="fas fa-database"></i>) 적용.
+  - 대시보드 라벨을 범용적인 용어("Source Data", "Target Data")로 변경.
+  - 로그인 페이지 저작권(Copyright) 정보 수정.
+
 ### 2026-01-13
 - **데이터 비교 로직 개선:**
   - 기존: 중복된 키(Key)가 있는 행을 삭제하여 일부 데이터(약 40건)만 비교되는 현상 수정.
