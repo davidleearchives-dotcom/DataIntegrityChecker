@@ -1,4 +1,4 @@
-# 엑셀 Data Verification Tool (혈액수급관리시스템 데이터 검증 도구)
+# Data Verification Tool (데이터 검증 도구)
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.68%2B-green)
@@ -7,14 +7,14 @@
 
 ## 📖 개요 (Overview)
 
-**엑셀 Data Verification Tool**은 엑셀 원본 데이터와 엑셀 대조본 데이터를 비교하여 정합성을 검증하는 기업용(Enterprise) 웹 애플리케이션입니다.
+**Data Verification Tool**은 원본 데이터와 대조본 데이터(Excel, CSV, TXT)를 비교하여 정합성을 검증하는 기업용(Enterprise) 웹 애플리케이션입니다.
 
-두 개의 엑셀 파일을 업로드하여 자동으로 비교 분석하고, 불일치 내역을 시각적으로 제공하며, 결과 보고서를 엑셀 파일로 생성해줍니다.
+두 개의 데이터 파일을 업로드하여 자동으로 비교 분석하고, 불일치 내역을 시각적으로 제공하며, 결과 보고서를 엑셀 파일로 생성해줍니다.
 
 ## ✨ 주요 기능 (Key Features)
 
 ### 1. 📊 대시보드 (Dashboard)
-- **파일 비교:** 원본(Source)과 대조본(Target) 엑셀 파일 업로드 및 즉시 비교.
+- **파일 비교:** 원본(Source)과 대조본(Target) 엑셀파일 시
 - **실시간 분석:** 전체 건수, 일치, 불일치, 누락 건수 요약 카드 제공.
 - **데이터 미리보기:** 불일치(Mismatch) 항목을 우선적으로 웹에서 바로 확인.
 - **결과 내보내기:** 검증 결과가 하이라이팅(Yellow/Red)된 엑셀 파일 다운로드.
@@ -25,7 +25,7 @@
 - 날짜, 파일명, 결과 요약 정보 조회.
 
 ### 3. ⚙️ 설정 (Settings)
-- **칼럼 매핑:** 비교할 엑셀 칼럼(Source/Target)을 유동적으로 설정 가능.
+- **칼럼 매핑:** 비교할 데이터 칼럼(Source/Target)을 유동적으로 설정 가능.
 - **사용자 관리 (Admin):** 관리자 권한으로 사용자 계정 생성 및 관리.
 
 ### 4. 🔒 보안 (Security)
@@ -94,7 +94,7 @@ DataIntegrityChecker/
 │   ├── models.py          # DB 모델 정의
 │   ├── auth.py            # 인증 로직
 │   ├── routers/           # API 라우터 (Dashboard, History, Settings)
-│   ├── services/          # 비즈니스 로직 (비교 알고리즘, 엑셀 처리)
+│   ├── services/          # 비즈니스 로직 (비교 알고리즘, 데이터 처리)
 │   └── templates/         # HTML 템플릿
 ├── uploads/               # 업로드 파일 임시 저장소
 ├── results/               # 결과 파일 저장소
@@ -118,6 +118,6 @@ DataIntegrityChecker/
 
 ---
 
-## �📝 라이선스 (License)
+## �� 라이선스 (License)
 
 This project is licensed under the MIT License.

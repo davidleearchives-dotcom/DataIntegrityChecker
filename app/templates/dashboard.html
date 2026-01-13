@@ -6,7 +6,7 @@
     <div class="flex justify-between items-center">
         <div>
             <h2 class="text-2xl font-bold text-gray-800">Data Verification Dashboard</h2>
-            <p class="text-gray-500 text-sm">Compare BMS API Data with Red Cross Data</p>
+            <p class="text-gray-500 text-sm">Compare Source Data with Target Data</p>
         </div>
         <div class="flex gap-3">
             <button onclick="resetDashboard()" class="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
@@ -26,7 +26,7 @@
                 <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                     <i class="fas fa-database text-xl"></i>
                 </div>
-                <h3 class="font-semibold text-gray-800">Source: BMS API Data</h3>
+                <h3 class="font-semibold text-gray-800">Source Data</h3>
                 <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
                 <input type="file" id="sourceFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('sourceFile', 'sourceInfo')">
                 <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
@@ -44,7 +44,7 @@
                 <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                     <i class="fas fa-file-medical text-xl"></i>
                 </div>
-                <h3 class="font-semibold text-gray-800">Target: Red Cross Data</h3>
+                <h3 class="font-semibold text-gray-800">Target Data</h3>
                 <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
                 <input type="file" id="targetFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('targetFile', 'targetInfo')">
                 <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
