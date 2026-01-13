@@ -27,8 +27,8 @@
                     <i class="fas fa-database text-xl"></i>
                 </div>
                 <h3 class="font-semibold text-gray-800">Source: BMS API Data</h3>
-                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx) or CSV (.csv)</p>
-                <input type="file" id="sourceFile" accept=".xlsx,.csv" class="hidden" onchange="handleFileSelect('sourceFile', 'sourceInfo')">
+                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
+                <input type="file" id="sourceFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('sourceFile', 'sourceInfo')">
                 <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
                 <p id="sourceInfo" class="mt-2 text-sm text-green-600 font-medium hidden"></p>
             </div>
@@ -45,8 +45,8 @@
                     <i class="fas fa-file-medical text-xl"></i>
                 </div>
                 <h3 class="font-semibold text-gray-800">Target: Red Cross Data</h3>
-                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx) or CSV (.csv)</p>
-                <input type="file" id="targetFile" accept=".xlsx,.csv" class="hidden" onchange="handleFileSelect('targetFile', 'targetInfo')">
+                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
+                <input type="file" id="targetFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('targetFile', 'targetInfo')">
                 <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
                 <p id="targetInfo" class="mt-2 text-sm text-green-600 font-medium hidden"></p>
             </div>
@@ -63,10 +63,20 @@
         </button>
     </div>
 
-    <!-- Loading Spinner -->
-    <div id="loading" class="hidden text-center py-12">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p class="text-gray-500">Processing files... This may take a moment.</p>
+    <!-- Loading / Progress -->
+    <div id="loading" class="hidden py-8">
+        <div class="max-w-xl mx-auto">
+            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                <span id="progressMessage">Starting...</span>
+                <span id="progressPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2">
+                <div id="progressBar" class="bg-blue-600 h-4 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+            </div>
+            <div class="text-center text-xs text-gray-500">
+                Time Elapsed: <span id="timer">0.0s</span>
+            </div>
+        </div>
     </div>
 
     <!-- Results Section -->
@@ -115,6 +125,8 @@
 
 <script>
     let currentResultFile = "";
+    let pollInterval = null;
+    let startTime = null;
 
     function handleFileSelect(inputId, infoId) {
         const input = document.getElementById(inputId);
@@ -134,38 +146,96 @@
             return;
         }
 
+        // UI Reset
         document.getElementById('loading').classList.remove('hidden');
         document.getElementById('resultsSection').classList.add('hidden');
         document.getElementById('compareBtnContainer').classList.add('hidden');
+        
+        // Progress Reset
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressPercent').innerText = '0%';
+        document.getElementById('progressMessage').innerText = 'Initializing...';
+        document.getElementById('timer').innerText = '0.0s';
 
         const formData = new FormData();
         formData.append('source_file', sourceFile);
         formData.append('target_file', targetFile);
 
         try {
+            // Start Task
             const response = await axios.post('/compare', formData);
-            const data = response.data;
+            const taskId = response.data.task_id;
             
-            // Update Stats
-            document.getElementById('statTotal').innerText = data.summary.total_rows;
-            document.getElementById('statMatch').innerText = data.summary.matched;
-            document.getElementById('statMismatch').innerText = data.summary.mismatched;
-            document.getElementById('statMissingSrc').innerText = data.summary.missing_source;
-            document.getElementById('statMissingTgt').innerText = data.summary.missing_target;
-            
-            currentResultFile = data.result_file;
-            document.getElementById('exportBtn').classList.remove('hidden');
+            // Start Polling
+            pollProgress(taskId);
 
-            // Render Table
-            renderTable(data.preview);
-            
-            document.getElementById('resultsSection').classList.remove('hidden');
         } catch (error) {
-            alert("Comparison failed: " + (error.response?.data?.detail || error.message));
+            alert("Comparison failed to start: " + (error.response?.data?.detail || error.message));
             document.getElementById('compareBtnContainer').classList.remove('hidden');
-        } finally {
             document.getElementById('loading').classList.add('hidden');
         }
+    }
+
+    function pollProgress(taskId) {
+        if (pollInterval) clearInterval(pollInterval);
+        
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await axios.get(`/status/${taskId}`);
+                const data = res.data;
+                
+                // Update UI
+                const percent = data.progress + '%';
+                document.getElementById('progressBar').style.width = percent;
+                document.getElementById('progressPercent').innerText = percent;
+                document.getElementById('progressMessage').innerText = data.message;
+                document.getElementById('timer').innerText = data.elapsed.toFixed(1) + 's';
+
+                if (data.status === 'completed') {
+                    clearInterval(pollInterval);
+                    finishComparison(data.result);
+                } else if (data.status === 'failed') {
+                    clearInterval(pollInterval);
+                    alert("Task Failed: " + data.error);
+                    resetUIState();
+                }
+
+            } catch (err) {
+                console.error("Polling error", err);
+                // If 404, task is gone (likely server restart)
+                if (err.response && err.response.status === 404) {
+                    clearInterval(pollInterval);
+                    // Silent reset, no alert
+                    resetUIState();
+                }
+            }
+        }, 500);
+    }
+
+    function finishComparison(data) {
+        // Update Stats
+        document.getElementById('statTotal').innerText = data.summary.total_rows;
+        document.getElementById('statMatch').innerText = data.summary.matched;
+        document.getElementById('statMismatch').innerText = data.summary.mismatched;
+        document.getElementById('statMissingSrc').innerText = data.summary.missing_source;
+        document.getElementById('statMissingTgt').innerText = data.summary.missing_target;
+        
+        currentResultFile = data.result_file;
+        document.getElementById('exportBtn').classList.remove('hidden');
+
+        // Render Table
+        renderTable(data.preview);
+        
+        document.getElementById('resultsSection').classList.remove('hidden');
+        document.getElementById('loading').classList.add('hidden');
+        // We keep compare button hidden or show it as "New Comparison"?
+        // Let's show Reset button in header mostly.
+        // But user might want to run again.
+    }
+
+    function resetUIState() {
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('compareBtnContainer').classList.remove('hidden');
     }
 
     function renderTable(data) {

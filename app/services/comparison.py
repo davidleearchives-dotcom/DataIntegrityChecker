@@ -14,12 +14,14 @@ def col2num(col_str):
         expn += 1
     return col_num - 1
 
-def compare_excel_files(file_source, file_target, mapping_rules_str: str):
+def compare_excel_files(file_source, file_target, mapping_rules_str: str, progress_callback=None):
     """
     Compares two excel files based on mapping rules using Column Letters (A, B, C...).
     Ignores the first row (header) for mapping, but preserves it for output.
     """
     try:
+        if progress_callback: progress_callback(5, "Initializing comparison...")
+
         mapping = json.loads(mapping_rules_str)
         source_cols_raw = mapping.get("source_cols", [])
         target_cols_raw = mapping.get("target_cols", [])
@@ -37,18 +39,31 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str):
         # file_source is a path string
         
         def load_file(path):
-            if path.lower().endswith('.csv'):
+            if path.lower().endswith(('.csv', '.txt')):
                 # Try reading csv. Assume utf-8, but could be cp949 for Korean
+                # Force all columns to be string to avoid type mismatch issues
                 try:
-                    return pd.read_csv(path, encoding='utf-8')
+                    return pd.read_csv(path, encoding='utf-8', dtype=str)
                 except UnicodeDecodeError:
-                    return pd.read_csv(path, encoding='cp949')
+                    return pd.read_csv(path, encoding='cp949', dtype=str)
             else:
                 # Assume Excel
-                return pd.read_excel(path)
+                return pd.read_excel(path, dtype=str)
 
+        if progress_callback: progress_callback(10, "Loading source file...")
         df_a = load_file(file_source)
+        if progress_callback: progress_callback(25, "Loading target file...")
         df_b = load_file(file_target)
+        
+        # Fill NaN with empty string to avoid matching issues
+        df_a = df_a.fillna("")
+        df_b = df_b.fillna("")
+        
+        # Trim whitespace from ALL string columns
+        # This is expensive but necessary for robust matching
+        if progress_callback: progress_callback(30, "Normalizing data...")
+        df_a = df_a.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        df_b = df_b.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         
         # Validate Column Bounds
         max_col_a = df_a.shape[1]
@@ -62,166 +77,187 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str):
             
         # Select relevant columns by Index
         # We rename them to internal generic names (col_0, col_1...) to facilitate merge
+        if progress_callback: progress_callback(35, "Processing columns...")
         generic_col_names = [f"__col_{i}" for i in range(len(source_indices))]
+        
+        # Ensure generic_col_names length matches source_indices
+        if len(generic_col_names) != len(source_indices):
+            # This should logically not happen unless range is weird
+            pass
+
+        # Check if generic_col_names matches dataframe columns count? No.
+        # We are assigning NEW names.
         
         df_a_sub = df_a.iloc[:, source_indices].copy()
         df_b_sub = df_b.iloc[:, target_indices].copy()
         
         # Assign generic names for merging
+        # Critical: Ensure number of columns matches
+        if len(df_a_sub.columns) != len(generic_col_names):
+             raise ValueError(f"Source column count mismatch. Expected {len(generic_col_names)}, got {len(df_a_sub.columns)}")
+        if len(df_b_sub.columns) != len(generic_col_names):
+             raise ValueError(f"Target column count mismatch. Expected {len(generic_col_names)}, got {len(df_b_sub.columns)}")
+
         df_a_sub.columns = generic_col_names
         df_b_sub.columns = generic_col_names
         
         # Identify Key Column (First column in the list)
         key_col = generic_col_names[0]
         
-        # Merge
-        merged = pd.merge(df_a_sub, df_b_sub, on=key_col, how='outer', suffixes=('_A', '_B'), indicator=True)
+        # Enforce Unique Key Constraint
+        # User feedback: "Why only 40 rows?" -> Because we dropped duplicates.
+        # User wants to compare ALL rows even if keys are duplicated.
+        # Solution: Use 'cumcount' to match duplicates sequentially (1st with 1st, 2nd with 2nd)
+        # instead of dropping them or allowing Cartesian explosion.
+        
+        if progress_callback: progress_callback(40, "Handling duplicate keys...")
+        
+        # Add a temporary occurrence column for merging
+        df_a_sub['__occurrence'] = df_a_sub.groupby(key_col).cumcount()
+        df_b_sub['__occurrence'] = df_b_sub.groupby(key_col).cumcount()
+        
+        # Merge on Key AND Occurrence
+        if progress_callback: progress_callback(50, "Merging data...")
+        merged = pd.merge(df_a_sub, df_b_sub, on=[key_col, '__occurrence'], how='outer', suffixes=('_A', '_B'), indicator=True)
+        
+        # Remove the temporary column
+        merged.drop(columns=['__occurrence'], inplace=True)
         
         # Analyze Results
-        summary = {
-            "total_rows": len(merged),
-            "matched": 0,
-            "mismatched": 0,
-            "missing_source": 0, # In B but not A
-            "missing_target": 0  # In A but not B
-        }
-
-        def determine_status(row):
-            if row['_merge'] == 'left_only':
-                return 'Missing_in_B'
-            elif row['_merge'] == 'right_only':
-                return 'Missing_in_A'
-            else:
-                # Compare other columns
-                is_match = True
-                mismatch_indices = [] # Store original column letters? or generic index?
+        
+        # Analyze Results
+        if progress_callback: progress_callback(65, "Analyzing discrepancies...")
+        
+        # Initialize validation status
+        merged['validation_status'] = 'Match'
+        
+        # Vectorized check for Missing
+        merged.loc[merged['_merge'] == 'left_only', 'validation_status'] = 'Missing_in_B'
+        merged.loc[merged['_merge'] == 'right_only', 'validation_status'] = 'Missing_in_A'
+        
+        # For 'both', check mismatches
+        both_mask = merged['_merge'] == 'both'
+        mismatch_mask = pd.Series(False, index=merged.index)
+        mismatch_details = pd.Series("", index=merged.index)
+        
+        for i, col in enumerate(generic_col_names):
+            if col == key_col: continue
+            
+            # Compare columns (vectorized)
+            # Ensure string conversion for safe comparison
+            val_a = merged.loc[both_mask, f"{col}_A"].astype(str).str.strip()
+            val_b = merged.loc[both_mask, f"{col}_B"].astype(str).str.strip()
+            
+            # Replace 'nan' string with empty if needed, or rely on pandas equality
+            # Let's handle NaN explicitly if needed, but astype(str) makes NaN 'nan'
+            # If both are 'nan', they match.
+            
+            # Fix: Handle potential Key Error if col is not in merged?
+            # merged was created with suffixes _A and _B.
+            # generic_col_names includes key_col.
+            # key_col in merged does NOT have suffix if it was the join key?
+            # Wait, pd.merge on=key_col...
+            # If suffixes are provided, non-key columns get suffixes.
+            # THE KEY COLUMN usually does NOT get suffix if it's the join key.
+            # But here generic_col_names has ALL columns including key.
+            # So for key_col, f"{col}_A" might not exist!
+            
+            if col == key_col:
+                # This block is skipped by `if col == key_col: continue` above.
+                # So we are fine for the loop.
+                pass
+            
+            # Double check column existence
+            col_a_name = f"{col}_A"
+            col_b_name = f"{col}_B"
+            
+            if col_a_name not in merged.columns:
+                # Fallback: maybe it didn't get suffix?
+                # But we forced suffixes.
+                # If a column was unique to one side? No, we renamed both sides to same generic names.
+                # So they collide and MUST get suffixes.
+                raise ValueError(f"Missing column in merged data: {col_a_name}")
                 
-                for i, col in enumerate(generic_col_names):
-                    if col == key_col: continue
-                    val_a = row.get(f"{col}_A")
-                    val_b = row.get(f"{col}_B")
-                    
-                    # Handle NaN
-                    if pd.isna(val_a) and pd.isna(val_b):
-                        continue
-                        
-                    # Loose comparison (str vs int, strip, etc.)?
-                    # Strict for now as per previous logic, but ensure type compatibility if needed
-                    if str(val_a).strip() != str(val_b).strip(): # Basic string normalization
-                        is_match = False
-                        # We want to report the Original Column Letter of Source
-                        mismatch_indices.append(source_cols_raw[i])
+            val_a = merged.loc[both_mask, col_a_name].astype(str).str.strip()
+            val_b = merged.loc[both_mask, col_b_name].astype(str).str.strip()
+            
+            col_mismatch = val_a != val_b
+            
+            if col_mismatch.any():
+                # Update global mismatch mask
+                mismatch_mask.loc[col_mismatch[col_mismatch].index] = True
                 
-                if is_match:
-                    return 'Match'
-                else:
-                    return f"Mismatch: {', '.join(mismatch_indices)}"
+                # Append column name to details
+                # This part is slightly slower but much faster than row iteration
+                # We only operate on mismatched rows for this column
+                original_col_name = source_cols_raw[i]
+                mismatch_details.loc[col_mismatch[col_mismatch].index] += f"{original_col_name}, "
 
-        merged['validation_status'] = merged.apply(determine_status, axis=1)
+        # Update status for mismatches
+        final_mismatch_mask = both_mask & mismatch_mask
+        if final_mismatch_mask.any():
+            merged.loc[final_mismatch_mask, 'validation_status'] = "Mismatch: " + mismatch_details.loc[final_mismatch_mask].str.rstrip(", ")
         
         # Update Summary
-        summary["matched"] = len(merged[merged['validation_status'] == 'Match'])
-        summary["mismatched"] = len(merged[merged['validation_status'].str.startswith('Mismatch')])
-        summary["missing_target"] = len(merged[merged['validation_status'] == 'Missing_in_B']) 
-        summary["missing_source"] = len(merged[merged['validation_status'] == 'Missing_in_A'])
+        if progress_callback: progress_callback(80, "Summarizing results...")
+        summary = {
+            "total_rows": len(merged),
+            "matched": len(merged[merged['validation_status'] == 'Match']),
+            "mismatched": len(merged[merged['validation_status'].str.startswith('Mismatch')]),
+            "missing_target": len(merged[merged['validation_status'] == 'Missing_in_B']),
+            "missing_source": len(merged[merged['validation_status'] == 'Missing_in_A'])
+        }
         
         # Reconstruct Result DataFrame
         # We need to attach the result to the original df_a rows.
         # But since we merged on a Key that might be duplicated or complex, we need to map back carefully.
         # We used the KEY VALUE from the specified column.
         
-        # 1. Create a map of Key -> Status from merged result
-        # Note: If Key is not unique, this might be ambiguous. Assuming Key is unique for now.
-        status_map = merged.set_index(key_col)['validation_status'].to_dict()
+        if progress_callback: progress_callback(90, "Preparing result file...")
         
-        # 2. Get the Key Column Name in Original DF_A
-        # key_col_idx = source_indices[0]
-        # key_col_name_a = df_a.columns[key_col_idx]
+        # Reconstruct Result DataFrame using vectorized operations
+        result_df = pd.DataFrame(index=merged.index)
         
-        # Actually, let's just use the merged result logic as before, but adapted for indices.
+        # Mask for "Use B" (when Missing in A)
+        use_b_mask = merged['validation_status'] == 'Missing_in_A'
         
-        processed_data = []
-        
-        # Helper: Get original column name for key
-        key_idx_a = source_indices[0]
-        key_idx_b = target_indices[0]
-        
-        # For lookup
-        # We can't easily set index on a column by integer position in pandas without name.
-        # So we use the column name at that position.
-        col_name_key_a = df_a.columns[key_idx_a]
-        col_name_key_b = df_b.columns[key_idx_b]
-        
-        df_a_idx = df_a.set_index(col_name_key_a)
-        df_b_idx = df_b.set_index(col_name_key_b)
-        
-        for idx, row in merged.iterrows():
-            key_val = row[key_col]
-            status = row['validation_status']
+        for i, generic_col in enumerate(generic_col_names):
+            original_name = source_cols_raw[i]
             
-            row_data = {}
+            # If Key Column, it doesn't have suffix if it's the join key
+            if generic_col == key_col:
+                # Key column is just the column itself, no suffix
+                combined = merged[generic_col]
+            else:
+                vals_a = merged[f"{generic_col}_A"]
+                vals_b = merged[f"{generic_col}_B"]
+                # Combine: where use_b_mask is True, take B, else A
+                combined = vals_a.where(~use_b_mask, vals_b)
             
-            if status == 'Missing_in_A':
-                # Fetch from B
-                if key_val in df_b_idx.index:
-                    b_data = df_b_idx.loc[key_val]
-                    if isinstance(b_data, pd.DataFrame): b_data = b_data.iloc[0]
-                    
-                    # We try to fill A's columns. 
-                    # If we know the mapping (A->B), we can fill mapped columns.
-                    # Unmapped columns in A will be empty.
-                    
-                    # Fill Key
-                    row_data[col_name_key_a] = key_val
-                    
-                    # Fill Mapped Columns
-                    for src_i, tgt_i in zip(source_indices, target_indices):
-                        if src_i == key_idx_a: continue
-                        src_col_name = df_a.columns[src_i]
-                        tgt_col_name = df_b.columns[tgt_i]
-                        row_data[src_col_name] = b_data.get(tgt_col_name)
-                        
-            elif status == 'Missing_in_B':
-                # Fetch from A
-                if key_val in df_a_idx.index:
-                    a_data = df_a_idx.loc[key_val]
-                    if isinstance(a_data, pd.DataFrame): a_data = a_data.iloc[0]
-                    row_data = a_data.to_dict()
-                    row_data[col_name_key_a] = key_val
+            result_df[original_name] = combined
             
-            else: # Match or Mismatch
-                # Fetch from A
-                if key_val in df_a_idx.index:
-                    a_data = df_a_idx.loc[key_val]
-                    if isinstance(a_data, pd.DataFrame): a_data = a_data.iloc[0]
-                    row_data = a_data.to_dict()
-                    row_data[col_name_key_a] = key_val
-            
-            row_data['Verification_Result'] = status
-            processed_data.append(row_data)
-
-        result_df = pd.DataFrame(processed_data)
-        
-        # Filter Result DF to show ONLY Mapped Columns + Verification Result
-        # Get column names for mapped source indices
-        display_cols = [df_a.columns[i] for i in source_indices]
-        # Ensure Key Column is included (it usually is in source_indices)
-        
-        final_cols = display_cols + ['Verification_Result']
-        
-        # Ensure result_df contains these columns
-        # (It should, because we filled them from A or B)
-        result_df = result_df[final_cols]
+        # Add Verification Result
+        result_df['Verification_Result'] = merged['validation_status']
         
         # Prepare Preview Data (Source/Target pairs) for Mismatches
-        # This is separate from result_df (which is for Excel export)
+        # This part iterates only over mismatches, which should be much fewer than total rows.
+        # If everything is mismatch, it might be slow, but usually < 100% mismatch.
+        # We only need top 200 for preview in the route, but here we return all?
+        # Route says: preview_list[:200].
+        # So we should limit generation here to avoid memory/time waste?
+        # The return signature implies full list.
+        # But if we have 30k mismatches, creating 60k row dicts is slow.
+        # Let's optimize: only generate top 200 preview items here?
+        # OR: Return the dataframe of mismatches and let the route handle it?
+        # Current contract: returns preview_data list.
+        # Let's limit it to 200 items (100 mismatches) right here for performance.
+        
         preview_data = []
         
-        for idx, row in merged.iterrows():
+        mismatch_rows = merged[merged['validation_status'] != 'Match'].head(100) # Limit to 100 discrepancies
+        
+        for idx, row in mismatch_rows.iterrows():
             status = row['validation_status']
-            if status == 'Match':
-                continue
-                
             key_val = row[key_col]
             
             # Source Row Data
@@ -229,12 +265,8 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str):
             # Target Row Data
             tgt_row = {'type': 'Target', 'key': key_val, 'status': status}
             
-            # Fill columns
-            # Also fill the Key Column explicitly, because it might not be in the loop if we skipped it
-            # But we need to display it if it's part of the mapped columns.
-            
             for i, generic_col in enumerate(generic_col_names):
-                col_display_name = df_a.columns[source_indices[i]] # Use Source Header Name
+                col_display_name = source_cols_raw[i]
                 
                 # Special handling for Key Column
                 if generic_col == key_col:
@@ -254,6 +286,7 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str):
             preview_data.append(src_row)
             preview_data.append(tgt_row)
 
+        if progress_callback: progress_callback(95, "Finalizing...")
         return summary, result_df, preview_data
 
     except Exception as e:

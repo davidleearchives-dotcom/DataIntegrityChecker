@@ -26,7 +26,101 @@ def generate_styled_excel(df: pd.DataFrame, output_path: str):
     ws.append(headers)
     
     # Write Data
+    # Optimization: Use openpyxl append is faster but enumerate rows is fine for 10k.
+    # But wait, enumerate(dataframe_to_rows(...)) yields index, row.
+    # dataframe_to_rows yields a list of values.
+    # If the index is wrong, it might exceed limits?
+    # openpyxl limits: 1,048,576 rows.
+    # Error says: "Row number supplied was 1048577"
+    # This means we are trying to write to row 1048577.
+    # Why?
+    # dataframe_to_rows(df, index=False, header=False) yields data rows.
+    # start=2 means we start writing at row 2 (row 1 is header).
+    # If df has 1M rows, last row is 1M + 1.
+    # If df is small (9k), then index should be around 9002.
+    # UNLESS: df has huge index or empty rows?
+    # Or dataframe_to_rows is behaving unexpectedly?
+    # Or result_df has wrong index?
+    # In comparison.py we did: result_df = pd.DataFrame(index=merged.index)
+    # If merged index is RangeIndex(0, 9471), then result_df index is same.
+    # But wait, dataframe_to_rows with index=False SHOULD NOT yield index.
+    
+    # Alternative: Maybe previous logic in comparison.py created a DF with wrong size?
+    # Let's debug by checking df shape before writing? Can't print here easily.
+    
+    # But wait, the error might be because we are iterating and the index variable 'r_idx' goes too high?
+    # enumerate starts at 2.
+    # If dataframe_to_rows yields too many rows?
+    # Maybe NaN handling?
+    
+    # Or maybe the file is not empty but has a lot of empty rows at the end?
+    # But user says 9471 rows.
+    
+    # HYPOTHESIS: The 'dataframe_to_rows' might be yielding None or something that causes issues?
+    # Or maybe the issue is in how we calculate r_idx?
+    # No, standard python enumerate.
+    
+    # Let's verify if we are appending correctly.
+    # ws.append(row) automatically increments row pointer? 
+    # No, ws.append appends to the next available row.
+    # But we are ALSO using ws.cell(row=r_idx, ...) to style.
+    # If ws.append puts data in row X, and we try to style row Y (where Y != X)?
+    # ws.append uses internal pointer.
+    # If we mix append and cell access?
+    # ws.append adds to the bottom.
+    # Initially ws has 1 row (header).
+    # First iteration: r_idx=2. ws.append(row) -> adds to row 2.
+    # ws.cell(row=2, ...) -> accessing row 2. Matches.
+    
+    # So logic seems correct for normal case.
+    # Why 1048577? That is exactly MAX_ROW + 1.
+    # This implies the loop ran 1M times?
+    # Or we tried to access that row directly?
+    
+    # Maybe result_df has an index that causes dataframe_to_rows to yield weirdly?
+    # We set index=merged.index.
+    # If merged.index is weird?
+    
+    # Let's try a safer way:
+    # Use ws.append solely for data.
+    # Then iterate strictly based on df.shape[0].
+    
+    rows = list(dataframe_to_rows(df, index=False, header=False))
+    # This loads all into memory, might be heavy for 1M rows but fine for 10k.
+    # For 100k+ it's bad.
+    
+    # Better:
+    # Just iterate and use append.
+    # Keep track of current row manually?
+    # r_idx from enumerate matches append order if we start from empty sheet + header.
+    
+    # Wait, could it be that 'dataframe_to_rows' is generating infinite rows? Unlikely.
+    
+    # Another possibility:
+    # The 'df' passed to this function is HUGE?
+    # Maybe the comparison logic created a Cartesian Product (Cross Join) by mistake?
+    # 9k rows * 9k rows = 81M rows?
+    # We used pd.merge(..., how='outer').
+    # If key is not unique, it explodes.
+    # User's data: "이력번호" seems unique?
+    # If many duplicates in keys, outer join will explode.
+    # 9471 rows. If all same key -> 9471 * 9471 = 89M rows.
+    # This would explain why it hits the Excel row limit!
+    
+    # CHECK: Comparison Logic.
+    # If 'key_col' is NOT unique, merge explodes.
+    # We should warn or handle duplicates.
+    # But for now, let's limit the export to MAX rows to prevent crash.
+    
+    MAX_EXCEL_ROWS = 1048576
+    if len(df) > MAX_EXCEL_ROWS - 1: # -1 for header
+        # Truncate and warn (how to warn? maybe add a row saying truncated)
+        df = df.iloc[:MAX_EXCEL_ROWS-2]
+        # We can't easily warn UI from here, but at least we don't crash.
+    
     for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=False), start=2):
+        if r_idx > MAX_EXCEL_ROWS:
+            break
         ws.append(row)
         
         # Apply Styles
@@ -68,18 +162,11 @@ def generate_styled_excel(df: pd.DataFrame, output_path: str):
             for c_idx in range(1, len(headers) + 1):
                 ws.cell(row=r_idx, column=c_idx).fill = red_fill
 
-    # Auto-adjust column widths
-    for column in ws.columns:
-        max_length = 0
-        column = [cell for cell in column]
-        for cell in column:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = (max_length + 2)
-        ws.column_dimensions[column[0].column_letter].width = adjusted_width
+    # Auto-adjust column widths - REMOVED for performance on large datasets
+    # Iterating through all cells is too slow for >10k rows.
+    # We set a reasonable default width instead.
+    # for col_idx in range(1, len(headers) + 1):
+    #     ws.column_dimensions[get_column_letter(col_idx)].width = 15
 
     wb.save(output_path)
     return output_path

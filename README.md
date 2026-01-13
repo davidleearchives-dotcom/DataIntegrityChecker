@@ -1,4 +1,4 @@
-# 엑셀셀 Data Verification Tool (혈액수급관리시스템 데이터 검증 도구)
+# 엑셀 Data Verification Tool (혈액수급관리시스템 데이터 검증 도구)
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.68%2B-green)
@@ -7,7 +7,7 @@
 
 ## 📖 개요 (Overview)
 
-**엑셀셀 Data Verification Tool**은 엑셀 원본 데이터와 엑셀 대조본 데이터를 비교하여 정합성을 검증하는 기업용(Enterprise) 웹 애플리케이션입니다.
+**엑셀 Data Verification Tool**은 엑셀 원본 데이터와 엑셀 대조본 데이터를 비교하여 정합성을 검증하는 기업용(Enterprise) 웹 애플리케이션입니다.
 
 두 개의 엑셀 파일을 업로드하여 자동으로 비교 분석하고, 불일치 내역을 시각적으로 제공하며, 결과 보고서를 엑셀 파일로 생성해줍니다.
 
@@ -103,6 +103,21 @@ DataIntegrityChecker/
 └── run.py                 # 실행 스크립트
 ```
 
-## 📝 라이선스 (License)
+## � 업데이트 로그 (Update Log)
+
+### 2026-01-13
+- **데이터 비교 로직 개선:**
+  - 기존: 중복된 키(Key)가 있는 행을 삭제하여 일부 데이터(약 40건)만 비교되는 현상 수정.
+  - 변경: `groupby.cumcount()`를 사용하여 중복 키를 가진 행들도 순차적으로 매칭되도록 개선 (전체 9470개 행 비교 가능).
+- **데이터 전처리 강화:**
+  - 모든 데이터를 문자열(String)로 변환하여 타입 불일치로 인한 오류 방지.
+  - 데이터 앞뒤의 공백(Whitespace) 제거 로직 추가 (`strip()`).
+  - `NaN` (결측치) 값을 빈 문자열(`""`)로 치환하여 비교 정확도 향상.
+- **헤더 제외 로직 확인:**
+  - 첫 번째 행(Header)은 비교에서 제외하고, 두 번째 행부터 데이터 비교가 수행되도록 로직 유지 및 검증.
+
+---
+
+## �📝 라이선스 (License)
 
 This project is licensed under the MIT License.
