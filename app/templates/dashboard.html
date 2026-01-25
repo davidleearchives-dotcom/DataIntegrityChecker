@@ -20,39 +20,105 @@
 
     <!-- Upload Section -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="uploadSection">
-        <!-- Source Upload -->
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group cursor-pointer relative" id="sourceDropZone">
-            <div class="text-center pointer-events-none">
-                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                    <i class="fas fa-database text-xl"></i>
+        <!-- Source Column -->
+        <div class="flex flex-col space-y-4">
+            <!-- Source Upload -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group cursor-pointer relative" id="sourceDropZone">
+                <div class="text-center pointer-events-none">
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-database text-xl"></i>
+                    </div>
+                    <h3 class="font-semibold text-gray-800">Source Data</h3>
+                    <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
+                    <input type="file" id="sourceFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('sourceFile', 'source')">
+                    <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
+                    
+                    <!-- File Metadata Info -->
+                    <div id="sourceMeta" class="mt-4 text-left hidden bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <div class="flex justify-between items-center mb-2 border-b border-blue-200 pb-2">
+                            <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">File Info</span>
+                            <span id="sourceFilename" class="text-sm text-gray-800 font-semibold truncate max-w-[180px]" title=""></span>
+                        </div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs text-gray-500">Total Rows</span>
+                            <span id="sourceRows" class="text-sm text-blue-600 font-bold animate-pulse">Checking...</span>
+                        </div>
+                        <div>
+                            <span class="text-xs text-gray-500 block mb-1">Mapped Columns</span>
+                            <div id="sourceCols" class="flex flex-wrap gap-1">
+                                <!-- Badges injected by JS -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <h3 class="font-semibold text-gray-800">Source Data</h3>
-                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
-                <input type="file" id="sourceFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('sourceFile', 'sourceInfo')">
-                <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
-                <p id="sourceInfo" class="mt-2 text-sm text-green-600 font-medium hidden"></p>
+                <!-- Drag Overlay -->
+                <div class="absolute inset-0 bg-blue-50 bg-opacity-90 flex items-center justify-center rounded-xl hidden" id="sourceOverlay">
+                    <p class="text-blue-600 font-bold">Drop Source File Here</p>
+                </div>
             </div>
-            <!-- Drag Overlay -->
-            <div class="absolute inset-0 bg-blue-50 bg-opacity-90 flex items-center justify-center rounded-xl hidden" id="sourceOverlay">
-                <p class="text-blue-600 font-bold">Drop Source File Here</p>
+            <!-- Duplicate Info (Outside of DropZone) -->
+            <div id="sourceDupInfo" class="hidden">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-xs text-yellow-800 shadow-sm">
+                    <p class="font-bold mb-2 flex items-center"><i class="fas fa-exclamation-triangle mr-2 text-yellow-600 text-sm"></i>Duplicates Found (<span id="sourceDupCount">0</span>):</p>
+                    <div class="max-h-32 overflow-y-auto border border-yellow-100 bg-white bg-opacity-60 rounded-lg mb-3 shadow-inner">
+                        <ul id="sourceDupList" class="list-disc list-inside opacity-90 px-3 py-2 space-y-1"></ul>
+                    </div>
+                    <label class="flex items-center space-x-3 cursor-pointer select-none bg-yellow-100 bg-opacity-50 p-2 rounded-lg hover:bg-yellow-200 transition-colors">
+                        <input type="checkbox" id="sourceIncludeDup" class="form-checkbox h-4 w-4 text-yellow-600 rounded border-yellow-300 focus:ring-yellow-500">
+                        <span class="font-medium">Include duplicates in comparison</span>
+                    </label>
+                </div>
             </div>
         </div>
 
-        <!-- Target Upload -->
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group cursor-pointer relative" id="targetDropZone">
-            <div class="text-center pointer-events-none">
-                <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                    <i class="fas fa-file-medical text-xl"></i>
+        <!-- Target Column -->
+        <div class="flex flex-col space-y-4">
+            <!-- Target Upload -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-dashed border-gray-300 hover:border-blue-500 transition-colors group cursor-pointer relative" id="targetDropZone">
+                <div class="text-center pointer-events-none">
+                    <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-file-medical text-xl"></i>
+                    </div>
+                    <h3 class="font-semibold text-gray-800">Target Data</h3>
+                    <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
+                    <input type="file" id="targetFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('targetFile', 'target')">
+                    <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
+                    
+                    <!-- File Metadata Info -->
+                    <div id="targetMeta" class="mt-4 text-left hidden bg-red-50 p-3 rounded-lg border border-red-100">
+                        <div class="flex justify-between items-center mb-2 border-b border-red-200 pb-2">
+                            <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">File Info</span>
+                            <span id="targetFilename" class="text-sm text-gray-800 font-semibold truncate max-w-[180px]" title=""></span>
+                        </div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs text-gray-500">Total Rows</span>
+                            <span id="targetRows" class="text-sm text-red-600 font-bold animate-pulse">Checking...</span>
+                        </div>
+                        <div>
+                            <span class="text-xs text-gray-500 block mb-1">Mapped Columns</span>
+                            <div id="targetCols" class="flex flex-wrap gap-1">
+                                <!-- Badges injected by JS -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <h3 class="font-semibold text-gray-800">Target Data</h3>
-                <p class="text-xs text-gray-500 mb-4">Excel (.xlsx), CSV (.csv) or Text (.txt)</p>
-                <input type="file" id="targetFile" accept=".xlsx,.csv,.txt" class="hidden" onchange="handleFileSelect('targetFile', 'targetInfo')">
-                <span class="text-sm text-blue-600 font-medium hover:underline">Browse File or Drag & Drop</span>
-                <p id="targetInfo" class="mt-2 text-sm text-green-600 font-medium hidden"></p>
+                <!-- Drag Overlay -->
+                <div class="absolute inset-0 bg-red-50 bg-opacity-90 flex items-center justify-center rounded-xl hidden" id="targetOverlay">
+                    <p class="text-red-600 font-bold">Drop Target File Here</p>
+                </div>
             </div>
-             <!-- Drag Overlay -->
-             <div class="absolute inset-0 bg-red-50 bg-opacity-90 flex items-center justify-center rounded-xl hidden" id="targetOverlay">
-                <p class="text-red-600 font-bold">Drop Target File Here</p>
+            <!-- Duplicate Info (Outside of DropZone) -->
+            <div id="targetDupInfo" class="hidden">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-xs text-yellow-800 shadow-sm">
+                    <p class="font-bold mb-2 flex items-center"><i class="fas fa-exclamation-triangle mr-2 text-yellow-600 text-sm"></i>Duplicates Found (<span id="targetDupCount">0</span>):</p>
+                    <div class="max-h-32 overflow-y-auto border border-yellow-100 bg-white bg-opacity-60 rounded-lg mb-3 shadow-inner">
+                        <ul id="targetDupList" class="list-disc list-inside opacity-90 px-3 py-2 space-y-1"></ul>
+                    </div>
+                    <label class="flex items-center space-x-3 cursor-pointer select-none bg-yellow-100 bg-opacity-50 p-2 rounded-lg hover:bg-yellow-200 transition-colors">
+                        <input type="checkbox" id="targetIncludeDup" class="form-checkbox h-4 w-4 text-yellow-600 rounded border-yellow-300 focus:ring-yellow-500">
+                        <span class="font-medium">Include duplicates in comparison</span>
+                    </label>
+                </div>
             </div>
         </div>
     </div>
@@ -84,8 +150,10 @@
         <!-- Metric Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500">
-                <p class="text-sm text-gray-500">Total Rows</p>
-                <h3 class="text-2xl font-bold text-gray-800" id="statTotal">-</h3>
+                <p class="text-sm text-gray-500">Comparison Rows (Src / Tgt)</p>
+                <h3 class="text-xl font-bold text-gray-800">
+                    <span id="statSrcRows">-</span> / <span id="statTgtRows">-</span>
+                </h3>
             </div>
             <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
                 <p class="text-sm text-gray-500">Matched</p>
@@ -127,13 +195,112 @@
     let currentResultFile = "";
     let pollInterval = null;
     let startTime = null;
+    let mappingSettings = { source_cols: [], target_cols: [] };
 
-    function handleFileSelect(inputId, infoId) {
+    // Fetch Settings on Load
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await axios.get('/settings');
+            if (res.data && res.data.column_mapping) {
+                const parsed = JSON.parse(res.data.column_mapping);
+                mappingSettings.source_cols = parsed.source_cols || [];
+                mappingSettings.target_cols = parsed.target_cols || [];
+            }
+        } catch (err) {
+            console.error("Failed to load settings:", err);
+            // Default fallback if needed
+        }
+    });
+
+    async function handleFileSelect(inputId, type) {
+        // type: 'source' or 'target'
         const input = document.getElementById(inputId);
-        const info = document.getElementById(infoId);
-        if (input.files.length > 0) {
-            info.innerText = input.files[0].name;
-            info.classList.remove('hidden');
+        if (input.files.length === 0) return;
+
+        const file = input.files[0];
+        
+        // 1. Show Metadata Area
+        const metaDiv = document.getElementById(type + 'Meta');
+        const filenameSpan = document.getElementById(type + 'Filename');
+        const rowsSpan = document.getElementById(type + 'Rows');
+        const colsDiv = document.getElementById(type + 'Cols');
+
+        metaDiv.classList.remove('hidden');
+        filenameSpan.innerText = file.name;
+        filenameSpan.title = file.name;
+        
+        // 2. Render Mapped Columns Badge
+        colsDiv.innerHTML = ''; // Clear previous
+        const cols = type === 'source' ? mappingSettings.source_cols : mappingSettings.target_cols;
+        const colorClass = type === 'source' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800';
+        
+        if (cols.length === 0) {
+            colsDiv.innerHTML = '<span class="text-xs text-gray-400">No columns mapped</span>';
+        } else {
+            cols.forEach(col => {
+                const badge = document.createElement('span');
+                badge.className = `px-2 py-0.5 rounded text-xs font-semibold ${colorClass} border border-opacity-20`;
+                badge.innerText = col;
+                colsDiv.appendChild(badge);
+            });
+        }
+
+        // 3. Analyze File (Get Row Count)
+        rowsSpan.innerText = "Checking...";
+        rowsSpan.classList.add('animate-pulse');
+        
+        // Reset Duplicate Info
+        const dupInfo = document.getElementById(type + 'DupInfo');
+        const dupList = document.getElementById(type + 'DupList');
+        const dupCount = document.getElementById(type + 'DupCount');
+        const dupCheck = document.getElementById(type + 'IncludeDup');
+        dupInfo.classList.add('hidden');
+        dupList.innerHTML = '';
+        if(dupCount) dupCount.innerText = '0';
+        dupCheck.checked = false; // Default: Exclude duplicates
+
+        const formData = new FormData();
+        formData.append('file', file);
+        // Pass relevant columns to API to calculate unique rows based on Key
+        formData.append('column_mapping', JSON.stringify({ cols: cols }));
+
+        try {
+            const res = await axios.post('/analyze_file', formData);
+            const totalRows = res.data.total_rows;
+            const uniqueRows = res.data.unique_rows;
+            const duplicates = res.data.duplicate_list || [];
+            
+            // Display: Total (Unique)
+            if (uniqueRows < totalRows) {
+                rowsSpan.innerHTML = `${totalRows.toLocaleString()} <span class="text-xs text-red-500 font-bold ml-1">(Unique: ${uniqueRows.toLocaleString()})</span>`;
+                
+                // Show Duplicate Details
+                if (duplicates.length > 0) {
+                    dupInfo.classList.remove('hidden');
+                    if(dupCount) dupCount.innerText = duplicates.length.toLocaleString();
+                    
+                    duplicates.forEach(dup => {
+                        const li = document.createElement('li');
+                        li.className = "truncate whitespace-nowrap"; // Keep full text but truncate visually if too long, or use horizontal scroll?
+                        // User requested scrollable area. whitespace-nowrap helps horizontal scroll if container allows, or just vertical.
+                        // Since we have vertical scroll, let's allow wrapping or just truncate?
+                        // "전체 중복되는 데이터를 보여주되 해당 영역내에서 스크롤로 전체 중복데이터를 확인"
+                        // This usually means vertical scroll for many items.
+                        li.innerText = dup;
+                        li.title = dup;
+                        dupList.appendChild(li);
+                    });
+                }
+            } else {
+                rowsSpan.innerText = totalRows.toLocaleString();
+            }
+            
+        } catch (err) {
+            console.error(err);
+            rowsSpan.innerText = "Error";
+            alert("Failed to analyze file: " + (err.response?.data?.detail || err.message));
+        } finally {
+            rowsSpan.classList.remove('animate-pulse');
         }
     }
 
@@ -160,6 +327,12 @@
         const formData = new FormData();
         formData.append('source_file', sourceFile);
         formData.append('target_file', targetFile);
+        
+        // Pass Duplicate Handling Options
+        const sourceIncludeDup = document.getElementById('sourceIncludeDup').checked;
+        const targetIncludeDup = document.getElementById('targetIncludeDup').checked;
+        formData.append('source_include_dup', sourceIncludeDup);
+        formData.append('target_include_dup', targetIncludeDup);
 
         try {
             // Start Task
@@ -214,11 +387,13 @@
 
     function finishComparison(data) {
         // Update Stats
-        document.getElementById('statTotal').innerText = data.summary.total_rows;
-        document.getElementById('statMatch').innerText = data.summary.matched;
-        document.getElementById('statMismatch').innerText = data.summary.mismatched;
-        document.getElementById('statMissingSrc').innerText = data.summary.missing_source;
-        document.getElementById('statMissingTgt').innerText = data.summary.missing_target;
+        if(document.getElementById('statSrcRows')) document.getElementById('statSrcRows').innerText = data.summary.source_rows.toLocaleString();
+        if(document.getElementById('statTgtRows')) document.getElementById('statTgtRows').innerText = data.summary.target_rows.toLocaleString();
+        
+        document.getElementById('statMatch').innerText = data.summary.matched.toLocaleString();
+        document.getElementById('statMismatch').innerText = data.summary.mismatched.toLocaleString();
+        document.getElementById('statMissingSrc').innerText = data.summary.missing_source.toLocaleString();
+        document.getElementById('statMissingTgt').innerText = data.summary.missing_target.toLocaleString();
         
         currentResultFile = data.result_file;
         document.getElementById('exportBtn').classList.remove('hidden');
@@ -338,11 +513,10 @@
     }
 
     // Drag and Drop Logic
-    function setupDragAndDrop(dropZoneId, overlayId, inputId, infoId) {
+    function setupDragAndDrop(dropZoneId, overlayId, inputId, type) {
         const dropZone = document.getElementById(dropZoneId);
         const overlay = document.getElementById(overlayId);
         const input = document.getElementById(inputId);
-        const info = document.getElementById(infoId);
 
         // Click to open file dialog
         dropZone.addEventListener('click', () => input.click());
@@ -374,12 +548,12 @@
             const files = dt.files;
             if (files.length > 0) {
                 input.files = files;
-                handleFileSelect(inputId, infoId);
+                handleFileSelect(inputId, type);
             }
         });
     }
 
-    setupDragAndDrop('sourceDropZone', 'sourceOverlay', 'sourceFile', 'sourceInfo');
-    setupDragAndDrop('targetDropZone', 'targetOverlay', 'targetFile', 'targetInfo');
+    setupDragAndDrop('sourceDropZone', 'sourceOverlay', 'sourceFile', 'source');
+    setupDragAndDrop('targetDropZone', 'targetOverlay', 'targetFile', 'target');
 </script>
 {% endblock %}

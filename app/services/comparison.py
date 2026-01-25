@@ -14,7 +14,7 @@ def col2num(col_str):
         expn += 1
     return col_num - 1
 
-def compare_excel_files(file_source, file_target, mapping_rules_str: str, progress_callback=None):
+def compare_excel_files(file_source, file_target, mapping_rules_str: str, progress_callback=None, source_include_dup: bool = False, target_include_dup: bool = False):
     """
     Compares two excel files based on mapping rules using Column Letters (A, B, C...).
     Ignores the first row (header) for mapping, but preserves it for output.
@@ -101,27 +101,73 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         df_a_sub.columns = generic_col_names
         df_b_sub.columns = generic_col_names
         
-        # Identify Key Column (First column in the list)
-        key_col = generic_col_names[0]
+        # Identify Key Columns (Use ALL Mapped Columns as Composite Key)
+        # Previously we used only the first column (generic_col_names[0])
+        # Now we use ALL generic_col_names as the key for deduplication and merging
+        key_cols = generic_col_names
         
-        # Enforce Unique Key Constraint
-        # User feedback: "Why only 40 rows?" -> Because we dropped duplicates.
-        # User wants to compare ALL rows even if keys are duplicated.
-        # Solution: Use 'cumcount' to match duplicates sequentially (1st with 1st, 2nd with 2nd)
-        # instead of dropping them or allowing Cartesian explosion.
+        # Deduplicate based on ALL Mapped Columns with Normalization
+        # User Requirement: Merge columns and remove spaces for robust key comparison
+        if progress_callback: progress_callback(40, "Normalizing and removing duplicate keys...")
         
-        if progress_callback: progress_callback(40, "Handling duplicate keys...")
+        def create_normalized_key(df, cols):
+            # Create a temporary key column by joining all key columns
+            # Logic: str(col).strip() for each col, then join
+            return df[cols].astype(str).apply(lambda row: "".join([str(val).strip() for val in row]), axis=1)
+
+        # Add normalized key column
+        df_a_sub['__norm_key'] = create_normalized_key(df_a_sub, key_cols)
+        df_b_sub['__norm_key'] = create_normalized_key(df_b_sub, key_cols)
         
-        # Add a temporary occurrence column for merging
-        df_a_sub['__occurrence'] = df_a_sub.groupby(key_col).cumcount()
-        df_b_sub['__occurrence'] = df_b_sub.groupby(key_col).cumcount()
+        # Count duplicates for logging/debugging if needed, but here we just drop
+        # Source Data (A): Keep only first occurrence UNLESS source_include_dup is True
+        if not source_include_dup:
+            df_a_sub = df_a_sub.drop_duplicates(subset=['__norm_key'], keep='first')
         
-        # Merge on Key AND Occurrence
-        if progress_callback: progress_callback(50, "Merging data...")
-        merged = pd.merge(df_a_sub, df_b_sub, on=[key_col, '__occurrence'], how='outer', suffixes=('_A', '_B'), indicator=True)
+        # Target Data (B): Keep only first occurrence UNLESS target_include_dup is True
+        # Note: Previous requirement was "DO NOT DROP DUPLICATES". 
+        # But now we give user choice. If user says Exclude Duplicates, we drop.
+        # If user says Include Duplicates (default behavior before was keep all), we keep.
+        # Wait, previous default for Target was KEEP ALL.
+        # But user complained about duplicates being counted.
+        # So "Exclude Duplicates" means drop them.
+        if not target_include_dup:
+             df_b_sub = df_b_sub.drop_duplicates(subset=['__norm_key'], keep='first')
+        
+        # Merge on Normalized Key
+        # how='right' -> Use Target Data as the base (Master).
+        # If we have duplicates in B and we kept them, they will be preserved.
+        # If we have duplicates in A and kept them, it might cause Cartesian product if B also has duplicates.
+        # But that's what "Include Duplicates" implies - many-to-many match.
+        
+        if progress_callback: progress_callback(50, "Merging data (Target Base)...")
+        
+        # If both have duplicates, merge needs to handle it.
+        # pd.merge on key handles many-to-many.
+        merged = pd.merge(df_a_sub, df_b_sub, on='__norm_key', how='right', suffixes=('_A', '_B'), indicator=True)
+        
+        # Cleanup: Remove normalized key from result if desired, or keep hidden
+        # The merge result will have __norm_key. We should not include it in the final output unless requested.
+        # But we need to restore original column values?
+        # The merged dataframe has columns: col_0_A, col_1_A..., col_0_B, col_1_B... AND __norm_key
+        # Since we merged on __norm_key, the original key columns (generic_col_names) are NOT the join keys anymore.
+        # So they WILL have _A and _B suffixes!
+        # This changes the logic below significantly.
         
         # Remove the temporary column
-        merged.drop(columns=['__occurrence'], inplace=True)
+        # merged.drop(columns=['__norm_key'], inplace=True) 
+        
+        # Update Key Cols variable to point to the normalized key?
+        # No, we want to show original values.
+        # But wait, if we merge on __norm_key, then `generic_col` will be present as `generic_col_A` and `generic_col_B`.
+        # `generic_col` itself will NOT be in `merged` columns!
+        
+        # So we need to adjust the reconstruction logic.
+        
+        # Analyze Results
+        
+        # Remove the temporary column - No longer needed as we don't use occurrence
+        # merged.drop(columns=['__occurrence'], inplace=True)
         
         # Analyze Results
         
@@ -132,7 +178,8 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         merged['validation_status'] = 'Match'
         
         # Vectorized check for Missing
-        merged.loc[merged['_merge'] == 'left_only', 'validation_status'] = 'Missing_in_B'
+        # left_only: Source Only -> Should not happen in Right Join
+        # right_only: Target Only -> Missing in Source (A)
         merged.loc[merged['_merge'] == 'right_only', 'validation_status'] = 'Missing_in_A'
         
         # For 'both', check mismatches
@@ -141,7 +188,8 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         mismatch_details = pd.Series("", index=merged.index)
         
         for i, col in enumerate(generic_col_names):
-            if col == key_col: continue
+            # Since we merged on __norm_key, ALL generic cols have suffixes _A and _B
+            # if col in key_cols: continue -> NO, we want to check them too if they differ visually (but they matched on normalized key)
             
             # Compare columns (vectorized)
             # Ensure string conversion for safe comparison
@@ -162,10 +210,10 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
             # But here generic_col_names has ALL columns including key.
             # So for key_col, f"{col}_A" might not exist!
             
-            if col == key_col:
-                # This block is skipped by `if col == key_col: continue` above.
+            # if col in key_cols:
+                # This block is skipped by `if col in key_cols: continue` above.
                 # So we are fine for the loop.
-                pass
+                # pass
             
             # Double check column existence
             col_a_name = f"{col}_A"
@@ -182,6 +230,20 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
             val_b = merged.loc[both_mask, col_b_name].astype(str).str.strip()
             
             col_mismatch = val_a != val_b
+            
+            # Note: For key columns, even if normalized key matches, the visual value might differ (e.g. spaces)
+            # We should probably flag this as mismatch?
+            # User requirement: "숫자와 기호,특수문자를 다 합하여 비교해서 중복을 거르면"
+            # This implies if "A 1" and "A1" match, they are SAME.
+            # So we should NOT flag them as mismatch?
+            # But here we are comparing row-by-row AFTER matching.
+            # If we matched "A 1" with "A1", should we say "Match"? Yes.
+            # So we should normalize here too?
+            
+            if col in key_cols:
+                 val_a = val_a.str.replace(" ", "")
+                 val_b = val_b.str.replace(" ", "")
+                 col_mismatch = val_a != val_b
             
             if col_mismatch.any():
                 # Update global mismatch mask
@@ -202,6 +264,8 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         if progress_callback: progress_callback(80, "Summarizing results...")
         summary = {
             "total_rows": len(merged),
+            "source_rows": len(df_a_sub),
+            "target_rows": len(df_b_sub),
             "matched": len(merged[merged['validation_status'] == 'Match']),
             "mismatched": len(merged[merged['validation_status'].str.startswith('Mismatch')]),
             "missing_target": len(merged[merged['validation_status'] == 'Missing_in_B']),
@@ -224,15 +288,11 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         for i, generic_col in enumerate(generic_col_names):
             original_name = source_cols_raw[i]
             
-            # If Key Column, it doesn't have suffix if it's the join key
-            if generic_col == key_col:
-                # Key column is just the column itself, no suffix
-                combined = merged[generic_col]
-            else:
-                vals_a = merged[f"{generic_col}_A"]
-                vals_b = merged[f"{generic_col}_B"]
-                # Combine: where use_b_mask is True, take B, else A
-                combined = vals_a.where(~use_b_mask, vals_b)
+            # Since we merged on __norm_key, ALL generic cols have suffixes _A and _B
+            vals_a = merged[f"{generic_col}_A"]
+            vals_b = merged[f"{generic_col}_B"]
+            # Combine: where use_b_mask is True, take B, else A
+            combined = vals_a.where(~use_b_mask, vals_b)
             
             result_df[original_name] = combined
             
@@ -258,23 +318,26 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         
         for idx, row in mismatch_rows.iterrows():
             status = row['validation_status']
-            key_val = row[key_col]
+            # key_val = row[key_col] # Now we have composite keys
             
             # Source Row Data
-            src_row = {'type': 'Source', 'key': key_val, 'status': status}
+            src_row = {'type': 'Source', 'status': status}
             # Target Row Data
-            tgt_row = {'type': 'Target', 'key': key_val, 'status': status}
+            tgt_row = {'type': 'Target', 'status': status}
+            
+            # Construct Key String for Display
+            key_display_vals = []
+            for k in key_cols:
+                 key_display_vals.append(str(row.get(k, "")))
+            src_row['key'] = " | ".join(key_display_vals)
+            tgt_row['key'] = " | ".join(key_display_vals)
             
             for i, generic_col in enumerate(generic_col_names):
                 col_display_name = source_cols_raw[i]
                 
-                # Special handling for Key Column
-                if generic_col == key_col:
-                    val_a = key_val
-                    val_b = key_val
-                else:
-                    val_a = row.get(f"{generic_col}_A")
-                    val_b = row.get(f"{generic_col}_B")
+                # Special handling for Key Columns - Now they also have suffixes
+                val_a = row.get(f"{generic_col}_A")
+                val_b = row.get(f"{generic_col}_B")
                 
                 # Format None/NaN
                 if pd.isna(val_a): val_a = ""

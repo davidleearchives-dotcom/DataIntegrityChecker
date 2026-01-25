@@ -23,7 +23,7 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 # task_id -> {"status": "processing", "progress": 0, "message": "Starting...", "result": None, "error": None, "start_time": timestamp}
 tasks: Dict[str, Dict[str, Any]] = {}
 
-def process_comparison_task(task_id: str, source_path: str, target_path: str, mapping_rules: str, current_user_id: int, db: Session):
+def process_comparison_task(task_id: str, source_path: str, target_path: str, mapping_rules: str, current_user_id: int, db: Session, source_include_dup: bool = False, target_include_dup: bool = False):
     try:
         tasks[task_id]["status"] = "processing"
         
@@ -31,8 +31,11 @@ def process_comparison_task(task_id: str, source_path: str, target_path: str, ma
             tasks[task_id]["progress"] = percent
             tasks[task_id]["message"] = message
             
-        # Run Comparison
-        summary, result_df, preview_list = comparison.compare_excel_files(source_path, target_path, mapping_rules, progress_callback)
+        # Run Comparison with Duplicate Options
+        summary, result_df, preview_list = comparison.compare_excel_files(
+            source_path, target_path, mapping_rules, progress_callback,
+            source_include_dup=source_include_dup, target_include_dup=target_include_dup
+        )
         
         # Update progress before saving
         tasks[task_id]["progress"] = 95
@@ -83,11 +86,105 @@ def process_comparison_task(task_id: str, source_path: str, target_path: str, ma
         tasks[task_id]["error"] = str(e)
         tasks[task_id]["message"] = f"Error: {str(e)}"
 
+@router.post("/analyze_file")
+async def analyze_file(
+    file: UploadFile = File(...),
+    column_mapping: str = Form(None)  # Receive mapping rules
+):
+    """
+    Analyzes the uploaded file to count total rows and unique rows based on key column.
+    """
+    try:
+        # Save temporarily to read
+        # Check extension
+        filename = file.filename.lower()
+        if filename.endswith(('.csv', '.txt')):
+            df = pd.read_csv(file.file, dtype=str)
+        else:
+            df = pd.read_excel(file.file, dtype=str)
+            
+        # Data Normalization (Strip whitespace, Fill NaN)
+        # This ensures the unique count matches the comparison logic
+        df = df.fillna("")
+        df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+            
+        total_rows = len(df)
+        unique_rows = total_rows
+        
+        # If column mapping is provided, calculate unique rows based on Key Columns
+        if column_mapping:
+            try:
+                mapping = json.loads(column_mapping)
+                cols = mapping.get("cols", [])
+                
+                if cols:
+                    # Convert column letters to indices
+                    def col2num(col_str):
+                        expn = 0
+                        col_num = 0
+                        for char in reversed(col_str):
+                            col_num += (ord(char.upper()) - ord('A') + 1) * (26 ** expn)
+                            expn += 1
+                        return col_num - 1
+
+                    col_indices = [col2num(c.strip()) for c in cols]
+                    
+                    # Filter valid indices
+                    valid_indices = [idx for idx in col_indices if idx < df.shape[1]]
+                    
+                    if valid_indices:
+                        # Get Data from ALL mapped columns
+                        subset_df = df.iloc[:, valid_indices]
+                        
+                        # Remove rows where ALL key columns are empty OR NaN
+                        # This prevents counting trailing empty rows as "duplicates"
+                        # dropna(how='all') might miss empty strings that are not NaN.
+                        # So we first replace empty strings with NaN for this check.
+                        subset_df_clean = subset_df.replace(r'^\s*$', float('nan'), regex=True).dropna(how='all')
+                        
+                        # Normalize Data: Simply concatenate string values (after stripping per cell)
+                        # User Request: "=E2 & F2 & G2" logic
+                        # This respects internal spaces but removes surrounding spaces
+                        
+                        def concat_keys(row):
+                            # Convert to string, strip whitespace, then join
+                            return "".join([str(val).strip() for val in row])
+
+                        # Create a temporary normalized key series from the CLEANED dataframe
+                        normalized_keys = subset_df_clean.apply(concat_keys, axis=1)
+                        
+                        # Count unique normalized keys
+                        unique_rows = normalized_keys.nunique()
+                        
+                        duplicate_list = []
+                        # Debugging: If difference is small, print duplicates
+                        if len(subset_df_clean) - unique_rows > 0:
+                            dups = normalized_keys[normalized_keys.duplicated(keep=False)]
+                            # Get the original concatenated keys for display
+                            # Limit to ALL duplicates (no limit)
+                            duplicate_list = dups.tolist()
+                            # Dedup the list itself for cleaner display
+                            duplicate_list = list(set(duplicate_list))
+                            print(f"Found {len(dups)} duplicate keys (sample): {duplicate_list[:5]}")
+            except Exception as e:
+                print(f"Error calculating unique rows: {e}")
+                pass
+            
+        return {
+            "total_rows": total_rows,
+            "unique_rows": unique_rows,
+            "duplicate_list": duplicate_list if 'duplicate_list' in locals() else []
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
+
 @router.post("/compare")
 def compare_files(
     background_tasks: BackgroundTasks,
     source_file: UploadFile = File(...),
     target_file: UploadFile = File(...),
+    source_include_dup: bool = Form(False),
+    target_include_dup: bool = Form(False),
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(database.get_db)
 ):
@@ -127,7 +224,9 @@ def compare_files(
             target_path, 
             mapping_rules, 
             current_user.id,
-            None # DB session not passed, created inside
+            None, # DB session not passed, created inside
+            source_include_dup,
+            target_include_dup
         )
         
         return {"task_id": task_id}
