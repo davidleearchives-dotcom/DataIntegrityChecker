@@ -262,14 +262,16 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         
         # Update Summary
         if progress_callback: progress_callback(80, "Summarizing results...")
+        missing_target_count = df_a_sub[~df_a_sub['__norm_key'].isin(df_b_sub['__norm_key'])].shape[0]
+        missing_source_count = df_b_sub[~df_b_sub['__norm_key'].isin(df_a_sub['__norm_key'])].shape[0]
         summary = {
             "total_rows": len(merged),
             "source_rows": len(df_a_sub),
             "target_rows": len(df_b_sub),
             "matched": len(merged[merged['validation_status'] == 'Match']),
             "mismatched": len(merged[merged['validation_status'].str.startswith('Mismatch')]),
-            "missing_target": len(merged[merged['validation_status'] == 'Missing_in_B']),
-            "missing_source": len(merged[merged['validation_status'] == 'Missing_in_A'])
+            "missing_target": missing_target_count,
+            "missing_source": missing_source_count
         }
         
         # Reconstruct Result DataFrame
@@ -312,45 +314,73 @@ def compare_excel_files(file_source, file_target, mapping_rules_str: str, progre
         # Current contract: returns preview_data list.
         # Let's limit it to 200 items (100 mismatches) right here for performance.
         
-        preview_data = []
-        
-        mismatch_rows = merged[merged['validation_status'] != 'Match'].head(100) # Limit to 100 discrepancies
-        
-        for idx, row in mismatch_rows.iterrows():
-            status = row['validation_status']
-            # key_val = row[key_col] # Now we have composite keys
-            
-            # Source Row Data
-            src_row = {'type': 'Source', 'status': status}
-            # Target Row Data
-            tgt_row = {'type': 'Target', 'status': status}
-            
-            # Construct Key String for Display
-            key_display_vals = []
-            for k in key_cols:
-                 key_display_vals.append(str(row.get(k, "")))
-            src_row['key'] = " | ".join(key_display_vals)
-            tgt_row['key'] = " | ".join(key_display_vals)
-            
-            for i, generic_col in enumerate(generic_col_names):
-                col_display_name = source_cols_raw[i]
-                
-                # Special handling for Key Columns - Now they also have suffixes
-                val_a = row.get(f"{generic_col}_A")
-                val_b = row.get(f"{generic_col}_B")
-                
-                # Format None/NaN
-                if pd.isna(val_a): val_a = ""
-                if pd.isna(val_b): val_b = ""
-                
-                src_row[col_display_name] = val_a
-                tgt_row[col_display_name] = val_b
-            
-            preview_data.append(src_row)
-            preview_data.append(tgt_row)
+        # Build categorized previews: matched, source_only, target_only
+        def build_preview_from_rows(rows_df, status_label):
+            items = []
+            for _, row in rows_df.iterrows():
+                # Source and Target rows
+                src_row = {'type': 'Source', 'status': status_label}
+                tgt_row = {'type': 'Target', 'status': status_label}
+                key_display_vals = []
+                for k in key_cols:
+                    key_display_vals.append(str(row.get(k, "")))
+                src_row['key'] = " | ".join(key_display_vals)
+                tgt_row['key'] = " | ".join(key_display_vals)
+                for i, generic_col in enumerate(generic_col_names):
+                    col_display_name = source_cols_raw[i]
+                    val_a = row.get(f"{generic_col}_A")
+                    val_b = row.get(f"{generic_col}_B")
+                    if pd.isna(val_a): val_a = ""
+                    if pd.isna(val_b): val_b = ""
+                    src_row[col_display_name] = val_a
+                    tgt_row[col_display_name] = val_b
+                items.append(src_row)
+                items.append(tgt_row)
+            return items
+
+        matched_rows = merged[merged['validation_status'] == 'Match'].head(100)
+        target_only_rows = merged[merged['validation_status'] == 'Missing_in_A'].head(100)
+
+        # Source-only rows are not present in right-join result, synthesize from df_a_sub
+        a_only_keys = set(df_a_sub['__norm_key']) - set(df_b_sub['__norm_key'])
+        source_only_base = df_a_sub[df_a_sub['__norm_key'].isin(a_only_keys)].copy().head(100)
+        # Create B-suffixed empty columns to fit builder
+        for gc in generic_col_names:
+            source_only_base[f"{gc}_B"] = ""
+        # And mirror A-suffixed columns
+        for gc in generic_col_names:
+            if gc not in source_only_base.columns:
+                # When iloc selected, columns are generic_col_names; ensure _A columns exist
+                pass
+        # Convert to the merged-like schema
+        # Ensure _A columns exist by copying actual columns to _A suffix
+        for gc in generic_col_names:
+            source_only_base[f"{gc}_A"] = source_only_base[gc]
+
+        preview_sets = {
+            'matched': build_preview_from_rows(matched_rows, 'Match'),
+            'target_only': build_preview_from_rows(target_only_rows, 'Missing_in_A'),
+            'source_only': build_preview_from_rows(source_only_base.assign(**{'_merge':'left_only'}), 'Missing_in_B')
+        }
+
+        # Prepare export frames for multi-sheet excel
+        export_frames = {
+            'Matched': result_df[result_df['Verification_Result'] == 'Match'].copy(),
+            'Source Only': pd.DataFrame({col: df_a_sub[col] if col in df_a_sub.columns else '' for col in df_a_sub.columns})
+        }
+        # Rename export columns for Source Only to original display names
+        if len(export_frames['Source Only'].columns) >= len(source_cols_raw):
+            rename_map = {c: source_cols_raw[i] if i < len(source_cols_raw) else c for i, c in enumerate(export_frames['Source Only'].columns)}
+            export_frames['Source Only'].rename(columns=rename_map, inplace=True)
+        export_frames['Source Only'] = export_frames['Source Only'][export_frames['Source Only']['__norm_key'].isin(list(a_only_keys))].copy()
+        export_frames['Source Only'].drop(columns=['__norm_key'], errors='ignore', inplace=True)
+        export_frames['Source Only']['Verification_Result'] = 'Missing_in_B'
+
+        target_only_df = result_df[result_df['Verification_Result'] == 'Missing_in_A'].copy()
+        export_frames['Target Only'] = target_only_df
 
         if progress_callback: progress_callback(95, "Finalizing...")
-        return summary, result_df, preview_data
+        return summary, export_frames, preview_sets
 
     except Exception as e:
         print(f"Error in comparison: {str(e)}")

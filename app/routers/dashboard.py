@@ -32,7 +32,7 @@ def process_comparison_task(task_id: str, source_path: str, target_path: str, ma
             tasks[task_id]["message"] = message
             
         # Run Comparison with Duplicate Options
-        summary, result_df, preview_list = comparison.compare_excel_files(
+        summary, export_frames, preview_sets = comparison.compare_excel_files(
             source_path, target_path, mapping_rules, progress_callback,
             source_include_dup=source_include_dup, target_include_dup=target_include_dup
         )
@@ -44,7 +44,7 @@ def process_comparison_task(task_id: str, source_path: str, target_path: str, ma
         # Generate Result Excel
         result_filename = f"Result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         result_path = os.path.join(RESULTS_DIR, result_filename)
-        excel_handler.generate_styled_excel(result_df, result_path)
+        excel_handler.generate_styled_excel(export_frames, result_path)
         
         # Save History
         history_data = schemas.HistoryCreate(
@@ -70,7 +70,11 @@ def process_comparison_task(task_id: str, source_path: str, target_path: str, ma
         finally:
             new_db.close()
         
-        preview_data = preview_list[:200]
+        preview_data = {
+            'matched': preview_sets.get('matched', [])[:200],
+            'source_only': preview_sets.get('source_only', [])[:200],
+            'target_only': preview_sets.get('target_only', [])[:200]
+        }
         
         tasks[task_id]["result"] = {
             "summary": summary,

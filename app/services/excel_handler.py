@@ -8,6 +8,43 @@ def generate_styled_excel(df: pd.DataFrame, output_path: str):
     Generates a styled Excel file from the dataframe.
     Highlights rows based on 'Verification_Result' column.
     """
+    if isinstance(df, dict):
+        wb = Workbook()
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+        red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+        first = True
+        for name, sdf in df.items():
+            ws = wb.active if first else wb.create_sheet(title=name[:31])
+            if first:
+                ws.title = name[:31]
+                first = False
+            headers = list(sdf.columns)
+            ws.append(headers)
+            MAX_EXCEL_ROWS = 1048576
+            if len(sdf) > MAX_EXCEL_ROWS - 1:
+                sdf = sdf.iloc[:MAX_EXCEL_ROWS-2]
+            for r_idx, row in enumerate(dataframe_to_rows(sdf, index=False, header=False), start=2):
+                if r_idx > MAX_EXCEL_ROWS:
+                    break
+                ws.append(row)
+                result_col_idx = len(headers)
+                result_val = ws.cell(row=r_idx, column=result_col_idx).value
+                if not result_val:
+                    continue
+                if str(result_val).startswith("Mismatch"):
+                    mismatched_cols_str = str(result_val).replace("Mismatch: ", "")
+                    mismatched_cols = [c.strip() for c in mismatched_cols_str.split(",") if c.strip()]
+                    for col_name in mismatched_cols:
+                        try:
+                            col_idx = headers.index(col_name) + 1
+                            ws.cell(row=r_idx, column=col_idx).fill = yellow_fill
+                        except ValueError:
+                            pass
+                elif result_val in ("Missing_in_B", "Missing_in_A"):
+                    for c_idx in range(1, len(headers) + 1):
+                        ws.cell(row=r_idx, column=c_idx).fill = red_fill
+        wb.save(output_path)
+        return output_path
     wb = Workbook()
     ws = wb.active
     ws.title = "Verification Result"

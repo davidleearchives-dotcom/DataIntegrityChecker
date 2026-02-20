@@ -150,10 +150,17 @@
         <!-- Metric Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500">
-                <p class="text-sm text-gray-500">Comparison Rows (Src / Tgt)</p>
-                <h3 class="text-xl font-bold text-gray-800">
-                    <span id="statSrcRows">-</span> / <span id="statTgtRows">-</span>
-                </h3>
+                <p class="text-sm text-gray-500">Comparison Rows</p>
+                <div class="grid grid-cols-2 gap-2 items-baseline">
+                    <div class="flex items-baseline gap-2 min-w-0">
+                        <span class="text-xs text-gray-500">Source</span>
+                        <span id="statSrcRows" class="text-xl font-bold text-gray-800 break-all truncate">-</span>
+                    </div>
+                    <div class="flex items-baseline gap-2 min-w-0 justify-end">
+                        <span class="text-xs text-gray-500">Target</span>
+                        <span id="statTgtRows" class="text-xl font-bold text-gray-800 break-all truncate text-right">-</span>
+                    </div>
+                </div>
             </div>
             <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
                 <p class="text-sm text-gray-500">Matched</p>
@@ -164,18 +171,30 @@
                 <h3 class="text-2xl font-bold text-yellow-600" id="statMismatch">-</h3>
             </div>
             <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
-                <p class="text-sm text-gray-500">Missing (Src/Tgt)</p>
-                <h3 class="text-2xl font-bold text-red-600">
-                    <span id="statMissingSrc">0</span> / <span id="statMissingTgt">0</span>
-                </h3>
+                <p class="text-sm text-gray-500">Missing</p>
+                <div class="flex gap-8">
+                    <div class="flex flex-col">
+                        <span class="text-xs text-gray-500">Target-only</span>
+                        <span id="statMissingSrc" class="text-2xl font-bold text-red-600">0</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-xs text-gray-500">Source-only</span>
+                        <span id="statMissingTgt" class="text-2xl font-bold text-red-600">0</span>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Preview Table -->
         <div class="bg-white rounded-xl shadow-sm overflow-hidden">
             <div class="p-4 border-b flex justify-between items-center bg-gray-50">
-                <h3 class="font-semibold text-gray-700">Preview (Mismatches Only)</h3>
-                <span class="text-xs text-gray-500">Showing top 100 discrepancies</span>
+                <div class="flex items-center gap-2">
+                    <h3 class="font-semibold text-gray-700 mr-4">Preview</h3>
+                    <button id="tabMatched" class="px-3 py-1 text-xs rounded border bg-white text-gray-700 hover:bg-gray-100" onclick="switchTab('matched')">Matched</button>
+                    <button id="tabSourceOnly" class="px-3 py-1 text-xs rounded border bg-white text-gray-700 hover:bg-gray-100" onclick="switchTab('source_only')">Source Only</button>
+                    <button id="tabTargetOnly" class="px-3 py-1 text-xs rounded border bg-white text-gray-700 hover:bg-gray-100" onclick="switchTab('target_only')">Target Only</button>
+                </div>
+                <span id="tabInfo" class="text-xs text-gray-500">Showing top 100 rows</span>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm text-left text-gray-500">
@@ -398,8 +417,9 @@
         currentResultFile = data.result_file;
         document.getElementById('exportBtn').classList.remove('hidden');
 
-        // Render Table
-        renderTable(data.preview);
+        // Tabs: store preview sets and show default tab
+        window.currentPreviewSets = data.preview || {};
+        switchTab('target_only');
         
         document.getElementById('resultsSection').classList.remove('hidden');
         document.getElementById('loading').classList.add('hidden');
@@ -498,6 +518,28 @@
             });
             tbody.appendChild(tr);
         });
+    }
+
+    function switchTab(tab) {
+        const sets = window.currentPreviewSets || {};
+        const data = sets[tab] || [];
+        renderTable(data);
+        const btns = {
+            matched: document.getElementById('tabMatched'),
+            source_only: document.getElementById('tabSourceOnly'),
+            target_only: document.getElementById('tabTargetOnly')
+        };
+        Object.keys(btns).forEach(k => {
+            btns[k].classList.remove('bg-blue-600','text-white');
+            btns[k].classList.add('bg-white','text-gray-700');
+        });
+        const active = btns[tab];
+        if (active) {
+            active.classList.remove('bg-white','text-gray-700');
+            active.classList.add('bg-blue-600','text-white');
+        }
+        const info = document.getElementById('tabInfo');
+        if (info) info.innerText = 'Showing top 100 rows';
     }
 
     function downloadResult() {
